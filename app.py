@@ -236,16 +236,7 @@ def load_video_files(video_dir: Path):
 
 
 def render_small_video(video_path: Path):
-    ext = video_path.suffix.lower().replace(".", "")
-    mime_map = {
-        "mp4": "video/mp4",
-        "mov": "video/quicktime",
-        "avi": "video/x-msvideo",
-        "mkv": "video/x-matroska",
-        "webm": "video/webm",
-    }
-    mime_type = mime_map.get(ext, "video/mp4")
-    st.video(video_path.read_bytes(), format=mime_type)
+    st.video(str(video_path))
 
 
 def get_annotation_file(annotator_name: str):
