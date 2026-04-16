@@ -3,6 +3,7 @@ import hashlib
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
+import requests
 
 import pandas as pd
 import streamlit as st
@@ -88,7 +89,7 @@ VIDEOS = [
     },
     {
         "name": "v1__s000010__e000020.mp4",
-        "url": "https://storage.googleapis.com/cat-emotion-videos-fuyu/videos/v2__s000000__e000009.mp4",
+        "url": "https://storage.googleapis.com/cat-emotion-videos-fuyu/videos/v1__s000010__e000020.mp4",
     },
 ]
 OUTPUT_DIR = Path("annotations")
@@ -235,7 +236,22 @@ def show_emotion_dialog(emotion_name: str):
         st.markdown(f"**{grp}**")
         for opt in opts:
             st.markdown(f"- {opt}")
-    
+SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOhc5yoqK3BcNyxTmwuEOs1s7i9yByEvjhXR9SUzCVBgLKOyxMv8KXqvOlNMT89xXy/exec"
+SHEET_SECRET = "my_cat_annotation_secret"
+
+def append_to_google_sheet(record: dict, annotator_name: str):
+    payload = {
+        **record,
+        "annotator_name": annotator_name,
+        "secret": SHEET_SECRET,
+    }
+
+    resp = requests.post(SHEET_WEBHOOK_URL, json=payload, timeout=20)
+    resp.raise_for_status()
+
+    data = resp.json()
+    if not data.get("ok"):
+        raise ValueError(data.get("error", "Unknown Google Sheet error"))   
 
 def load_video_files():
     return VIDEOS
@@ -1427,8 +1443,14 @@ else:
                 "step3_unknown_aux_groups": json.dumps(st.session_state.step3_unknown_aux, ensure_ascii=False),
             }
             upsert_annotation(record, annotator_name)
+
+            try:
+                append_to_google_sheet(record, annotator_name)
+                st.success("已儲存本筆標註，並同步到 Google Sheet。")
+            except Exception as e:
+                st.warning(f"本地已儲存，但同步 Google Sheet 失敗：{e}")
+
             st.session_state.completed = len(load_existing_annotations(annotator_name))
-            st.success("已儲存本筆標註。")
 
     st.divider()
     col1, col2 = st.columns(2)
