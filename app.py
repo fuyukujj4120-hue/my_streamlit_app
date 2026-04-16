@@ -236,7 +236,7 @@ def show_emotion_dialog(emotion_name: str):
         st.markdown(f"**{grp}**")
         for opt in opts:
             st.markdown(f"- {opt}")
-SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOhc5yoqK3BcNyxTmwuEOs1s7i9yByEvjhXR9SUzCVBgLKOyxMv8KXqvOlNMT89xXy/exec"
+SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzA_0AnSkFSeN6GFLr1wDsvx-l28-5a3s605l9CV6QwwTfcJ4GejNepx2yOIjX7M85m/exec"
 SHEET_SECRET = "my_cat_annotation_secret"
 
 def append_to_google_sheet(record: dict, annotator_name: str):
