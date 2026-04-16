@@ -81,7 +81,16 @@ st.markdown(
 )
 
 APP_TITLE = "貓咪情緒標註系統"
-VIDEO_DIR = Path("videos")
+VIDEOS = [
+    {
+        "name": "v1__s000000__e000010.mp4",
+        "url": "https://storage.googleapis.com/cat-emotion-videos-fuyu/videos/v1__s000000__e000010.mp4",
+    },
+    {
+        "name": "v1__s000010__e000020.mp4",
+        "url": "https://storage.googleapis.com/cat-emotion-videos-fuyu/videos/v1__s000010__e000020.mp4",
+    },
+]
 OUTPUT_DIR = Path("annotations")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -228,25 +237,16 @@ def show_emotion_dialog(emotion_name: str):
             st.markdown(f"- {opt}")
     
 
-def load_video_files(video_dir: Path):
-    if not video_dir.exists():
-        return []
-    exts = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
-    return sorted([p for p in video_dir.iterdir() if p.suffix.lower() in exts])
+def load_video_files():
+    return VIDEOS
 
 
-def render_small_video(video_path: Path):
-    ext = video_path.suffix.lower().replace(".", "")
-    mime_map = {
-        "mp4": "video/mp4",
-        "mov": "video/quicktime",
-        "avi": "video/x-msvideo",
-        "mkv": "video/x-matroska",
-        "webm": "video/webm",
-    }
-    mime_type = mime_map.get(ext, "video/mp4")
-    st.video(video_path.read_bytes(), format=mime_type)
+def render_small_video(video_item: dict):
+    st.video(video_item["url"])
 
+
+def get_video_name(video_item: dict):
+    return video_item["name"]
 
 def get_annotation_file(annotator_name: str):
     safe_name = annotator_name.strip() if annotator_name.strip() else "anonymous"
@@ -958,7 +958,7 @@ FEATURE_LOOKUP = build_feature_emotion_lookup(EMOTION_SCHEMA)
 st.title(APP_TITLE)
 st.caption("流程：Step 1 → Step 2 → Step 3 → Step 4（最終情緒確認）")
 
-videos = load_video_files(VIDEO_DIR)
+videos = load_video_files()
 init_session(videos)
 
 with st.sidebar:
@@ -985,7 +985,7 @@ with st.sidebar:
     ):
         sidebar_video = st.session_state.videos[st.session_state.current_index]
         st.markdown("---")
-        st.caption(f"影片：{sidebar_video.name}")
+        st.caption(f"影片：{get_video_name(sidebar_video)}")
         st.caption(f"影片索引：{st.session_state.current_index + 1}")
         render_small_video(sidebar_video)
 
@@ -1059,15 +1059,14 @@ else:
         st.stop()
 
     current_video = st.session_state.videos[st.session_state.current_index]
-    saved_record = get_saved_record(annotator_name, current_video.name) if annotator_name else None
-    st.subheader(f"目前影片：{current_video.name}")
+    current_video_name = get_video_name(current_video)
+    saved_record = get_saved_record(annotator_name, current_video_name) if annotator_name else None
+    st.subheader(f"目前影片：{current_video_name}")
 
     if saved_record and st.session_state.annotation_step == 1:
         st.info("這支影片你已經標過。你可以修改後重新儲存，系統會覆蓋舊資料。")
 
-    current_video_name = current_video.name
     if saved_record and st.session_state.get("loaded_saved_record_video") != current_video_name:
-        load_saved_record_into_step_state(saved_record)
         reset_checkbox_widget_state(st.session_state.current_index)
         st.session_state["loaded_saved_record_video"] = current_video_name
 
@@ -1411,8 +1410,8 @@ else:
             limb_selected = get_group_selected_features(st.session_state.step2_selected_aux, "aux", "四肢")
 
             record = {
-                "record_id": compute_record_id(annotator_name, current_video.name),
-                "video_file": current_video.name,
+                "record_id": compute_record_id(annotator_name, current_video_name),
+                "video_file": current_video_name,
                 "eye_selected": json.dumps(eye_selected, ensure_ascii=False),
                 "ear_selected": json.dumps(ear_selected, ensure_ascii=False),
                 "tail_selected": json.dumps(tail_selected, ensure_ascii=False),
