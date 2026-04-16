@@ -1426,7 +1426,7 @@ else:
             limb_selected = get_group_selected_features(st.session_state.step2_selected_aux, "aux", "四肢")
 
             record = {
-                "record_id": compute_record_id(annotator_name, current_video_name),
+                "record_id": annotator_name.strip(),
                 "video_file": current_video_name,
                 "eye_selected": json.dumps(eye_selected, ensure_ascii=False),
                 "ear_selected": json.dumps(ear_selected, ensure_ascii=False),
