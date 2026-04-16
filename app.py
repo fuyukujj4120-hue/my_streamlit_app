@@ -88,7 +88,7 @@ VIDEOS = [
     },
     {
         "name": "v1__s000010__e000020.mp4",
-        "url": "https://storage.googleapis.com/cat-emotion-videos-fuyu/videos/v1__s000010__e000020.mp4",
+        "url": "https://storage.googleapis.com/cat-emotion-videos-fuyu/videos/v2__s000000__e000009.mp4",
     },
 ]
 OUTPUT_DIR = Path("annotations")
