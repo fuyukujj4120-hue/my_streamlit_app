@@ -68,14 +68,13 @@ st.markdown(
         margin-top: 8px;
         margin-bottom: 12px;
     }
-  
 
     /* 放大「請選擇最終主導情緒」這行標題 */
     div[data-testid="stRadio"] > label p {
         font-size: 24px !important;
         font-weight: 700 !important;
     }
-   
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -213,31 +212,30 @@ DEFINITION_IMAGE_MAP = {
     "興趣": Path("images/interest.png"),
 }
 
+
 @st.dialog("情緒定義")
 def show_emotion_dialog(emotion_name: str):
     item = EMOTION_SCHEMA[emotion_name]
-
     st.subheader(emotion_name)
-
     img_path = DEFINITION_IMAGE_MAP.get(emotion_name)
     if img_path and img_path.exists():
         st.image(str(img_path), use_container_width=True)
-
     st.write(f"**定義：** {item['definition']}")
-
     st.markdown("### 核心特徵")
     for grp, opts in item["core_features"].items():
         st.markdown(f"**{grp}**")
         for opt in opts:
             st.markdown(f"- {opt}")
-
     st.markdown("### 次要 / 輔助特徵")
     for grp, opts in item["aux_features"].items():
         st.markdown(f"**{grp}**")
         for opt in opts:
             st.markdown(f"- {opt}")
+
+
 SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzA_0AnSkFSeN6GFLr1wDsvx-l28-5a3s605l9CV6QwwTfcJ4GejNepx2yOIjX7M85m/exec"
 SHEET_SECRET = "my_cat_annotation_secret"
+
 
 def append_to_google_sheet(record: dict, annotator_name: str):
     payload = {
@@ -245,13 +243,125 @@ def append_to_google_sheet(record: dict, annotator_name: str):
         "annotator_name": annotator_name,
         "secret": SHEET_SECRET,
     }
-
     resp = requests.post(SHEET_WEBHOOK_URL, json=payload, timeout=20)
     resp.raise_for_status()
-
     data = resp.json()
     if not data.get("ok"):
-        raise ValueError(data.get("error", "Unknown Google Sheet error"))   
+        raise ValueError(data.get("error", "Unknown Google Sheet error"))
+
+
+# ─────────────────────────────────────────────
+# [FIX] 新增：從 Google Sheet 讀取所有標註，
+#       計算同一影片不同標註者之間的一致性
+# ─────────────────────────────────────────────
+def fetch_all_annotations_from_sheet() -> pd.DataFrame:
+    """
+    透過 GET 請求從 Google Sheet webhook 取回所有標註資料。
+    Google Apps Script 端需支援 GET 並回傳 JSON 格式：
+      { "ok": true, "data": [ {...row...}, ... ] }
+    若 webhook 不支援 GET，回傳空 DataFrame 並顯示警告。
+    """
+    try:
+        resp = requests.get(
+            SHEET_WEBHOOK_URL,
+            params={"secret": SHEET_SECRET, "action": "read_all"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("ok") and isinstance(data.get("data"), list):
+            return pd.DataFrame(data["data"])
+        return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+
+def compute_inter_annotator_agreement(video_name: str) -> dict:
+    """
+    針對指定影片，取得所有標註者的 final_emotion，
+    計算最一致與最不一致的情緒分布。
+    回傳：
+      {
+        "total": int,
+        "counts": {emotion: count},
+        "most_common": str,
+        "agreement_rate": float,   # 最多票情緒的比例
+        "is_consistent": bool,     # agreement_rate >= 0.7 視為一致
+        "annotators": [str],
+      }
+    """
+    df = fetch_all_annotations_from_sheet()
+    if df.empty or "video_file" not in df.columns or "final_emotion" not in df.columns:
+        return None
+
+    sub = df[df["video_file"] == video_name].copy()
+    if sub.empty:
+        return None
+
+    counts = Counter(sub["final_emotion"].dropna().tolist())
+    total = sum(counts.values())
+    if total == 0:
+        return None
+
+    most_common_emotion, most_common_cnt = counts.most_common(1)[0]
+    agreement_rate = most_common_cnt / total
+
+    annotators = (
+        sub["annotator_name"].dropna().unique().tolist()
+        if "annotator_name" in sub.columns
+        else []
+    )
+
+    return {
+        "total": total,
+        "counts": dict(counts),
+        "most_common": most_common_emotion,
+        "agreement_rate": round(agreement_rate, 2),
+        "is_consistent": agreement_rate >= 0.70,
+        "annotators": annotators,
+    }
+
+
+def render_inter_annotator_panel(video_name: str):
+    """
+    在標註頁面頂端顯示跨標註者一致性面板（每個 Step 都會呼叫）。
+    """
+    with st.expander("📊 跨標註者一致性（點擊展開）", expanded=False):
+        with st.spinner("從 Google Sheet 讀取其他標註者資料…"):
+            result = compute_inter_annotator_agreement(video_name)
+
+        if result is None:
+            st.info("目前尚無其他標註者對此影片的標註資料，或無法連線到 Google Sheet。")
+            return
+
+        total = result["total"]
+        counts = result["counts"]
+        most_common = result["most_common"]
+        agreement_rate = result["agreement_rate"]
+        is_consistent = result["is_consistent"]
+        annotators = result["annotators"]
+
+        box_class = "ok-box" if is_consistent else "low-box"
+        consistency_label = "✅ 標註一致（≥70%）" if is_consistent else "⚠️ 標註不一致（<70%）"
+
+        st.markdown(
+            f"""
+            <div class="{box_class}">
+                <b>{consistency_label}</b><br>
+                共 {total} 筆標註 ｜ 最多人選：<b>{most_common}</b>（{int(agreement_rate * 100)}%）<br>
+                標註者：{', '.join(annotators) if annotators else '（無資料）'}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("**各情緒票數分布：**")
+        for emo, cnt in sorted(counts.items(), key=lambda x: -x[1]):
+            bar_pct = int((cnt / total) * 100)
+            st.markdown(f"- {emo}：{cnt} 票（{bar_pct}%）")
+
+
+# ─────────────────────────────────────────────
 
 def load_video_files():
     return VIDEOS
@@ -264,11 +374,15 @@ def render_small_video(video_item: dict):
 def get_video_name(video_item: dict):
     return video_item["name"]
 
+
 def get_annotation_file(annotator_name: str):
     safe_name = annotator_name.strip() if annotator_name.strip() else "anonymous"
     return OUTPUT_DIR / f"annotations_{safe_name}.csv"
 
 
+# ─────────────────────────────────────────────
+# [FIX] record_id 改用 hash(annotator::video)
+# ─────────────────────────────────────────────
 def compute_record_id(annotator_name: str, video_name: str):
     raw = f"{annotator_name}::{video_name}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
@@ -642,18 +756,23 @@ def check_step1(selected_core_all, unknown_core_groups):
     }
 
 
+# ─────────────────────────────────────────────
+# [FIX] check_step2：不管 core_candidates 是否有值，
+#       都要記錄次要特徵的情緒，確保 cond4
+#       （1 次要 + 行為）能正常運作
+# ─────────────────────────────────────────────
 def check_step2(step1_result, selected_aux_all, unknown_aux_groups):
     tail = infer_group_emotion(selected_aux_all, unknown_aux_groups, "aux", "尾巴")
     limb = infer_group_emotion(selected_aux_all, unknown_aux_groups, "aux", "四肢")
 
     core_candidates = step1_result.get("core_candidates", {}) or {}
+
+    # [FIX] 無論 core_candidates 是否為空，都先無條件記錄次要特徵的情緒
     secondary_supports = defaultdict(int)
-
-    if tail["status"] == "emotion" and tail["emotion"] in core_candidates:
+    if tail["status"] == "emotion":
         secondary_supports[tail["emotion"]] += 1
-    if limb["status"] == "emotion" and limb["emotion"] in core_candidates:
+    if limb["status"] == "emotion":
         secondary_supports[limb["emotion"]] += 1
-
     secondary_supports = dict(secondary_supports)
 
     if core_candidates:
@@ -688,22 +807,27 @@ def check_step2(step1_result, selected_aux_all, unknown_aux_groups):
                     "needs_confirmation": True,
                 }
 
-    aux_counts = Counter()
-    if tail["status"] == "emotion":
-        aux_counts[tail["emotion"]] += 1
-    if limb["status"] == "emotion":
-        aux_counts[limb["emotion"]] += 1
-
-    if len(aux_counts) == 1 and sum(aux_counts.values()) >= 1:
-        emo = list(aux_counts.keys())[0]
-        cnt = list(aux_counts.values())[0]
+    # core_candidates 為空時，直接依次要特徵判斷
+    if len(secondary_supports) == 1:
+        emo = list(secondary_supports.keys())[0]
+        cnt = list(secondary_supports.values())[0]
         return {
             "status": "部分一致" if cnt == 1 else "一致",
             "tentative_emotion": emo,
             "core_candidates": {},
-            "secondary_supports": {emo: cnt},
+            "secondary_supports": secondary_supports,
             "summary": f"{'部分一致' if cnt == 1 else '一致'}（0 核心、{cnt} 次要）",
             "needs_confirmation": False,
+        }
+
+    if len(secondary_supports) >= 2:
+        return {
+            "status": "不一致",
+            "tentative_emotion": "uncertain",
+            "core_candidates": core_candidates,
+            "secondary_supports": secondary_supports,
+            "summary": "不一致（次要特徵指向不同情緒）",
+            "needs_confirmation": True,
         }
 
     if tail["status"] == "unknown" and limb["status"] == "unknown":
@@ -968,6 +1092,60 @@ def render_confirmation_ui(step_prefix: str, result: dict):
     return None
 
 
+# ─────────────────────────────────────────────
+# [FIX] 新增：在每個步驟頂端顯示「目前步驟一致性」
+#       即時提醒使用者目前累積的特徵指向哪個情緒
+# ─────────────────────────────────────────────
+def render_live_consistency_banner(step: int):
+    """
+    在 Step 1~4 頂端顯示目前累積情緒一致性狀態提醒。
+    只要前一步驟有結果就顯示。
+    """
+    s1 = st.session_state.step1_check_result
+    s2 = st.session_state.step2_check_result
+    s3 = st.session_state.step3_check_result
+
+    lines = []
+
+    if step >= 2 and s1:
+        tentative = s1.get("tentative_emotion", "—")
+        lines.append(f"**Step 1（眼耳）初步判斷：** {tentative}　｜　狀態：{s1['status']}")
+
+    if step >= 3 and s2:
+        tentative = s2.get("tentative_emotion", "—")
+        lines.append(f"**Step 2（尾/四肢）：** {tentative}　｜　狀態：{s2['status']}")
+
+    if step >= 4 and s3:
+        final = s3.get("final_emotion", "—")
+        lines.append(f"**Step 3（行為）：** {final}　｜　狀態：{s3['status']}")
+
+    if not lines:
+        return
+
+    overall = evaluate_step4_overall_result(s1, s2, s3)
+    if overall["mode"] == "single":
+        box_class = "ok-box"
+        overall_msg = f"✅ 目前累積：<b>{overall['valid_emotions'][0]}</b>（已達情緒成立條件）"
+    elif overall["mode"] == "multiple":
+        box_class = "low-box"
+        valid_str = "、".join(overall["valid_emotions"])
+        overall_msg = f"⚠️ 目前累積：多種情緒（{valid_str}），最終將強制標為 uncertain"
+    else:
+        box_class = "warn-box"
+        overall_msg = "⏳ 目前累積：尚未達到情緒成立條件，請繼續標註"
+
+    body = "<br>".join(lines)
+    st.markdown(
+        f"""
+        <div class="{box_class}" style="margin-bottom:16px;">
+            {overall_msg}<br><hr style="margin:6px 0; border-color:#ccc;">
+            {body}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 FEATURE_CATALOG = build_neutral_feature_catalog(EMOTION_SCHEMA)
 FEATURE_LOOKUP = build_feature_emotion_lookup(EMOTION_SCHEMA)
 
@@ -1017,7 +1195,6 @@ with st.sidebar:
     }
 
     st.markdown('<div class="definition-card">', unsafe_allow_html=True)
-
     col1, col2 = st.columns(2)
     emotion_names = list(EMOTION_SCHEMA.keys())
 
@@ -1079,6 +1256,9 @@ else:
     saved_record = get_saved_record(annotator_name, current_video_name) if annotator_name else None
     st.subheader(f"目前影片：{current_video_name}")
 
+    # [FIX] 每個步驟頂端都顯示跨標註者一致性面板
+    render_inter_annotator_panel(current_video_name)
+
     if saved_record and st.session_state.annotation_step == 1:
         st.info("這支影片你已經標過。你可以修改後重新儲存，系統會覆蓋舊資料。")
 
@@ -1087,6 +1267,9 @@ else:
         st.session_state["loaded_saved_record_video"] = current_video_name
 
     if st.session_state.annotation_step == 1:
+        # [FIX] Step 1 頂端顯示目前累積一致性（此時無前步資料，但保持結構一致）
+        render_live_consistency_banner(1)
+
         default_core_values, default_core_unknown_groups = build_feature_saved_values(
             st.session_state.step1_selected_core,
             st.session_state.step1_unknown_core,
@@ -1144,6 +1327,9 @@ else:
                 st.rerun()
 
     elif st.session_state.annotation_step == 2:
+        # [FIX] Step 2 頂端顯示目前累積一致性（含 Step 1 結果）
+        render_live_consistency_banner(2)
+
         default_aux_values, default_aux_unknown_groups = build_feature_saved_values(
             st.session_state.step2_selected_aux,
             st.session_state.step2_unknown_aux,
@@ -1205,6 +1391,9 @@ else:
                 st.rerun()
 
     elif st.session_state.annotation_step == 3:
+        # [FIX] Step 3 頂端顯示目前累積一致性（含 Step 1 + 2 結果）
+        render_live_consistency_banner(3)
+
         st.markdown("## Step 3：看行為（單選）")
 
         behavior_options = group_features_for_display(FEATURE_CATALOG, "aux").get("行為", [])
@@ -1298,6 +1487,9 @@ else:
 
         core_cnt, sec_cnt, beh_cnt = count_step4_supports(step1_result, step2_result, step3_result)
         overall_result = evaluate_step4_overall_result(step1_result, step2_result, step3_result)
+
+        # [FIX] Step 4 頂端顯示完整累積一致性（含全部三步）
+        render_live_consistency_banner(4)
 
         st.markdown("## Step 4：最終情緒確認")
         if step1_result:
@@ -1418,15 +1610,30 @@ else:
                 st.error("請先選擇最終主導情緒。")
                 st.stop()
 
-            final_consistency = evaluate_final_label_consistency(selected_final, step1_result, step2_result, step3_result)
+            # ─────────────────────────────────────────────
+            # [FIX] 儲存前強制做一致性檢查，不一致則阻擋儲存
+            # ─────────────────────────────────────────────
+            final_consistency = evaluate_final_label_consistency(
+                selected_final, step1_result, step2_result, step3_result
+            )
+            if not final_consistency["is_consistent"]:
+                st.error(
+                    f"⚠️ 標註不一致，無法儲存！\n\n"
+                    f"原因：{final_consistency['message']}\n\n"
+                    f"請先按「檢查標註」確認特徵與最終情緒一致，或重新選擇情緒後再儲存。"
+                )
+                st.stop()
 
             eye_selected = get_group_selected_features(st.session_state.step1_selected_core, "core", "眼睛")
             ear_selected = get_group_selected_features(st.session_state.step1_selected_core, "core", "耳朵")
             tail_selected = get_group_selected_features(st.session_state.step2_selected_aux, "aux", "尾巴")
             limb_selected = get_group_selected_features(st.session_state.step2_selected_aux, "aux", "四肢")
 
+            # ─────────────────────────────────────────────
+            # [FIX] record_id 改用 hash(annotator::video)
+            # ─────────────────────────────────────────────
             record = {
-                "record_id": annotator_name.strip(),
+                "record_id": compute_record_id(annotator_name.strip(), current_video_name),
                 "video_file": current_video_name,
                 "eye_selected": json.dumps(eye_selected, ensure_ascii=False),
                 "ear_selected": json.dumps(ear_selected, ensure_ascii=False),
@@ -1441,6 +1648,7 @@ else:
                 "step2_unknown_aux_groups": json.dumps(st.session_state.step2_unknown_aux, ensure_ascii=False),
                 "step3_selected_aux_all": json.dumps(st.session_state.step3_selected_aux, ensure_ascii=False),
                 "step3_unknown_aux_groups": json.dumps(st.session_state.step3_unknown_aux, ensure_ascii=False),
+                "note": note,
             }
             upsert_annotation(record, annotator_name)
 
