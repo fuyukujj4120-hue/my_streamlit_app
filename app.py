@@ -3,6 +3,7 @@ import hashlib
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
+import requests
 
 import pandas as pd
 import streamlit as st
@@ -22,9 +23,9 @@ st.markdown(
         min-width: 560px !important;
     }
 
-    section[data-testid="stSidebar"] img {
+    section[data-testid="stSidebar"] video {
         width: 500px !important;
-        max-height: 400px !important;
+        height: 400px !important;
         object-fit: contain !important;
         background: #000 !important;
         border-radius: 8px !important;
@@ -67,6 +68,7 @@ st.markdown(
         margin-top: 8px;
         margin-bottom: 12px;
     }
+  
 
     /* 放大「請選擇最終主導情緒」這行標題 */
     div[data-testid="stRadio"] > label p {
@@ -80,7 +82,16 @@ st.markdown(
 )
 
 APP_TITLE = "貓咪情緒標註系統"
-IMAGE_DIR = Path("annotation_img")
+VIDEOS = [
+    {
+        "name": "v1__s000000__e000010.mp4",
+        "url": "https://storage.googleapis.com/cat-emotion-videos-fuyu/videos/v1__s000000__e000010.mp4",
+    },
+    {
+        "name": "v2__s000000__e000009.mp4",
+        "url": "https://storage.googleapis.com/cat-emotion-videos-fuyu/videos/v2__s000000__e000009.mp4",
+    },
+]
 OUTPUT_DIR = Path("annotations")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -89,7 +100,7 @@ FEATURE_GROUPS = ["眼睛", "耳朵", "尾巴", "四肢", "行為"]
 
 ANNOTATION_RULES = [
     "請先完整觀看，再進行標註",
-    "每一張圖片只選 1 類主情緒（主導情緒定義為在該圖片中最具代表性的情緒狀態）",
+    "每一段影片只選 1 類主情緒（主導情緒定義為在該片段中出現時間最長且最具代表性的情緒狀態）",
     "標註流程分為四步：Step 1 眼睛/耳朵；Step 2 尾巴/四肢；Step 3 行為；Step 4 最終情緒確認",
     "每個步驟需依據可觀察特徵勾選，不憑主觀猜測",
     "若某一部位無法觀察，勾選「無法判斷」即可",
@@ -225,45 +236,41 @@ def show_emotion_dialog(emotion_name: str):
         st.markdown(f"**{grp}**")
         for opt in opts:
             st.markdown(f"- {opt}")
+SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzA_0AnSkFSeN6GFLr1wDsvx-l28-5a3s605l9CV6QwwTfcJ4GejNepx2yOIjX7M85m/exec"
+SHEET_SECRET = "my_cat_annotation_secret"
 
-
-# ── 圖片讀取（取代原本的 load_video_files） ──────────────────────────────────
-
-def load_image_files(image_dir: Path):
-    """讀取 annotation_img/ 下所有 jpg/png，依檔名排序。"""
-    if not image_dir.exists():
-        return []
-    exts = {".jpg", ".jpeg", ".png", ".webp"}
-    return sorted([p for p in image_dir.iterdir() if p.suffix.lower() in exts])
-
-
-def render_sidebar_image(image_path: Path):
-    """在 sidebar 顯示當前標註圖片。"""
-    st.image(str(image_path), use_container_width=True)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-
-def render_small_video(video_path: Path):
-    ext = video_path.suffix.lower().replace(".", "")
-    mime_map = {
-        "mp4": "video/mp4",
-        "mov": "video/quicktime",
-        "avi": "video/x-msvideo",
-        "mkv": "video/x-matroska",
-        "webm": "video/webm",
+def append_to_google_sheet(record: dict, annotator_name: str):
+    payload = {
+        **record,
+        "annotator_name": annotator_name,
+        "secret": SHEET_SECRET,
     }
-    mime_type = mime_map.get(ext, "video/mp4")
-    st.video(video_path.read_bytes(), format=mime_type)
 
+    resp = requests.post(SHEET_WEBHOOK_URL, json=payload, timeout=20)
+    resp.raise_for_status()
+
+    data = resp.json()
+    if not data.get("ok"):
+        raise ValueError(data.get("error", "Unknown Google Sheet error"))   
+
+def load_video_files():
+    return VIDEOS
+
+
+def render_small_video(video_item: dict):
+    st.video(video_item["url"])
+
+
+def get_video_name(video_item: dict):
+    return video_item["name"]
 
 def get_annotation_file(annotator_name: str):
     safe_name = annotator_name.strip() if annotator_name.strip() else "anonymous"
     return OUTPUT_DIR / f"annotations_{safe_name}.csv"
 
 
-def compute_record_id(annotator_name: str, image_name: str):
-    raw = f"{annotator_name}::{image_name}"
+def compute_record_id(annotator_name: str, video_name: str):
+    raw = f"{annotator_name}::{video_name}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
@@ -288,11 +295,11 @@ def upsert_annotation(record: dict, annotator_name: str):
     df_all.to_csv(output_path, index=False, encoding="utf-8-sig")
 
 
-def get_saved_record(annotator_name: str, image_name: str):
+def get_saved_record(annotator_name: str, video_name: str):
     df = load_existing_annotations(annotator_name)
-    if df.empty or "image_file" not in df.columns:
+    if df.empty or "video_file" not in df.columns:
         return None
-    matched = df[df["image_file"] == image_name]
+    matched = df[df["video_file"] == video_name]
     if matched.empty:
         return None
     return matched.iloc[-1].to_dict()
@@ -311,11 +318,11 @@ def parse_json_list(value):
         return []
 
 
-def init_session(images):
+def init_session(videos):
     defaults = {
         "page": "instruction",
         "current_index": 0,
-        "images": images,
+        "videos": videos,
         "completed": 0,
         "annotation_step": 1,
         "step1_selected_core": [],
@@ -333,16 +340,16 @@ def init_session(images):
         "step1_confirmation_state": None,
         "step2_confirmation_state": None,
         "step3_confirmation_state": None,
-        "loaded_saved_record_image": None,
+        "loaded_saved_record_video": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 
-def reset_checkbox_widget_state(image_index: int):
-    prefix_core = f"core_{image_index}_"
-    prefix_aux = f"aux_{image_index}_"
+def reset_checkbox_widget_state(video_index: int):
+    prefix_core = f"core_{video_index}_"
+    prefix_aux = f"aux_{video_index}_"
     keys_to_delete = [
         k for k in list(st.session_state.keys())
         if k.startswith(prefix_core) or k.startswith(prefix_aux)
@@ -352,7 +359,7 @@ def reset_checkbox_widget_state(image_index: int):
 
 
 def reset_step_flow():
-    image_index = st.session_state.current_index
+    video_index = st.session_state.current_index
     st.session_state.annotation_step = 1
     st.session_state.step1_selected_core = []
     st.session_state.step1_unknown_core = []
@@ -369,14 +376,14 @@ def reset_step_flow():
     st.session_state["step1_confirmation_state"] = None
     st.session_state["step2_confirmation_state"] = None
     st.session_state["step3_confirmation_state"] = None
-    st.session_state["loaded_saved_record_image"] = None
-    reset_checkbox_widget_state(image_index)
+    st.session_state["loaded_saved_record_video"] = None
+    reset_checkbox_widget_state(video_index)
 
     for key in [
-        f"force_uncertain_{image_index}",
-        f"step4_check_result_{image_index}",
-        f"behavior_single_{image_index}",
-        f"behavior_unknown_{image_index}",
+        f"force_uncertain_{video_index}",
+        f"step4_check_result_{video_index}",
+        f"behavior_single_{video_index}",
+        f"behavior_unknown_{video_index}",
     ]:
         if key in st.session_state:
             del st.session_state[key]
@@ -967,14 +974,13 @@ FEATURE_LOOKUP = build_feature_emotion_lookup(EMOTION_SCHEMA)
 st.title(APP_TITLE)
 st.caption("流程：Step 1 → Step 2 → Step 3 → Step 4（最終情緒確認）")
 
-# ── 讀取圖片（取代原本的 videos） ────────────────────────────────────────────
-images = load_image_files(IMAGE_DIR)
-init_session(images)
+videos = load_video_files()
+init_session(videos)
 
 with st.sidebar:
     st.header("標註進度")
-    st.write(f"目前圖片數：{len(st.session_state.images)}")
-    st.write(f"目前索引：{st.session_state.current_index + 1 if st.session_state.images else 0}")
+    st.write(f"目前影片數：{len(st.session_state.videos)}")
+    st.write(f"目前索引：{st.session_state.current_index + 1 if st.session_state.videos else 0}")
     st.write(f"已完成：{st.session_state.completed}")
 
     annotator_name = st.text_input(
@@ -988,17 +994,16 @@ with st.sidebar:
         reset_step_flow()
         st.rerun()
 
-    # ── sidebar 圖片預覽 ──────────────────────────────────────────────────────
     if (
         st.session_state.page == "annotation"
-        and len(st.session_state.images) > 0
-        and st.session_state.current_index < len(st.session_state.images)
+        and len(st.session_state.videos) > 0
+        and st.session_state.current_index < len(st.session_state.videos)
     ):
-        sidebar_image = st.session_state.images[st.session_state.current_index]
+        sidebar_video = st.session_state.videos[st.session_state.current_index]
         st.markdown("---")
-        st.caption(f"圖片：{sidebar_image.name}")
-        st.caption(f"圖片索引：{st.session_state.current_index + 1} / {len(st.session_state.images)}")
-        render_sidebar_image(sidebar_image)
+        st.caption(f"影片：{get_video_name(sidebar_video)}")
+        st.caption(f"影片索引：{st.session_state.current_index + 1}")
+        render_small_video(sidebar_video)
 
     st.markdown("---")
     st.markdown('<div class="definition-title">情緒定義快速查看</div>', unsafe_allow_html=True)
@@ -1039,10 +1044,10 @@ if st.session_state.page == "instruction":
 
     st.info("請先完整閱讀以上規則與定義，再開始標註。")
 
-    start_disabled = (not annotator_name) or (len(st.session_state.images) == 0)
+    start_disabled = (not annotator_name) or (len(st.session_state.videos) == 0)
 
-    if len(st.session_state.images) == 0:
-        st.warning("目前找不到圖片。請先把圖片放進專案根目錄下的 annotation_img/ 資料夾。")
+    if len(st.session_state.videos) == 0:
+        st.warning("目前找不到影片。請先把影片放進專案根目錄下的 videos/ 資料夾。")
 
     if st.button("我已閱讀完畢，開始標註", disabled=start_disabled):
         st.session_state.page = "annotation"
@@ -1050,12 +1055,12 @@ if st.session_state.page == "instruction":
         st.rerun()
 
 else:
-    if len(st.session_state.images) == 0:
-        st.error("沒有可標註的圖片，請先把圖片檔放到 annotation_img/ 資料夾。")
+    if len(st.session_state.videos) == 0:
+        st.error("沒有可標註的影片，請先把影片檔放到 videos/ 資料夾。")
         st.stop()
 
-    if st.session_state.current_index >= len(st.session_state.images):
-        st.success("所有圖片都標註完成了。")
+    if st.session_state.current_index >= len(st.session_state.videos):
+        st.success("所有影片都標註完成了。")
         annotator_name = st.session_state.get("annotator_name", "anonymous")
         output_path = get_annotation_file(annotator_name)
         if output_path.exists():
@@ -1069,22 +1074,17 @@ else:
             )
         st.stop()
 
-    current_image = st.session_state.images[st.session_state.current_index]
-    saved_record = get_saved_record(annotator_name, current_image.name) if annotator_name else None
-
-    # ── 主區域：顯示當前圖片 ──────────────────────────────────────────────────
-    st.subheader(f"目前圖片：{current_image.name}　（{st.session_state.current_index + 1} / {len(st.session_state.images)}）")
-    st.image(str(current_image), use_container_width=True)
-    st.divider()
+    current_video = st.session_state.videos[st.session_state.current_index]
+    current_video_name = get_video_name(current_video)
+    saved_record = get_saved_record(annotator_name, current_video_name) if annotator_name else None
+    st.subheader(f"目前影片：{current_video_name}")
 
     if saved_record and st.session_state.annotation_step == 1:
-        st.info("這張圖片你已經標過。你可以修改後重新儲存，系統會覆蓋舊資料。")
+        st.info("這支影片你已經標過。你可以修改後重新儲存，系統會覆蓋舊資料。")
 
-    current_image_name = current_image.name
-    if saved_record and st.session_state.get("loaded_saved_record_image") != current_image_name:
-        load_saved_record_into_step_state(saved_record)
+    if saved_record and st.session_state.get("loaded_saved_record_video") != current_video_name:
         reset_checkbox_widget_state(st.session_state.current_index)
-        st.session_state["loaded_saved_record_image"] = current_image_name
+        st.session_state["loaded_saved_record_video"] = current_video_name
 
     if st.session_state.annotation_step == 1:
         default_core_values, default_core_unknown_groups = build_feature_saved_values(
@@ -1426,8 +1426,8 @@ else:
             limb_selected = get_group_selected_features(st.session_state.step2_selected_aux, "aux", "四肢")
 
             record = {
-                "record_id": compute_record_id(annotator_name, current_image.name),
-                "image_file": current_image.name,                          # ← 改為 image_file
+                "record_id": annotator_name.strip(),
+                "video_file": current_video_name,
                 "eye_selected": json.dumps(eye_selected, ensure_ascii=False),
                 "ear_selected": json.dumps(ear_selected, ensure_ascii=False),
                 "tail_selected": json.dumps(tail_selected, ensure_ascii=False),
@@ -1441,23 +1441,28 @@ else:
                 "step2_unknown_aux_groups": json.dumps(st.session_state.step2_unknown_aux, ensure_ascii=False),
                 "step3_selected_aux_all": json.dumps(st.session_state.step3_selected_aux, ensure_ascii=False),
                 "step3_unknown_aux_groups": json.dumps(st.session_state.step3_unknown_aux, ensure_ascii=False),
-                "note": note,
             }
             upsert_annotation(record, annotator_name)
+
+            try:
+                append_to_google_sheet(record, annotator_name)
+                st.success("已儲存本筆標註，並同步到 Google Sheet。")
+            except Exception as e:
+                st.warning(f"本地已儲存，但同步 Google Sheet 失敗：{e}")
+
             st.session_state.completed = len(load_existing_annotations(annotator_name))
-            st.success("已儲存本筆標註。")
 
     st.divider()
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("上一張", disabled=st.session_state.current_index == 0):
+        if st.button("上一段", disabled=st.session_state.current_index == 0):
             st.session_state.current_index -= 1
             reset_step_flow()
             st.rerun()
 
     with col2:
-        if st.button("下一張", disabled=st.session_state.current_index >= len(st.session_state.images) - 1):
+        if st.button("下一段", disabled=st.session_state.current_index >= len(st.session_state.videos) - 1):
             st.session_state.current_index += 1
             reset_step_flow()
             st.rerun()
