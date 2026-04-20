@@ -905,18 +905,7 @@ with st.sidebar:
         reset_step_flow()
         st.rerun()
 
-    # ─── 下載自己的 CSV（只含自己的標註）───
-    if annotator_name:
-        df_mine = load_existing_annotations(annotator_name)
-        if not df_mine.empty:
-            csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-            st.download_button(
-                label="⬇️ 下載我的標註 CSV",
-                data=csv_bytes,
-                file_name=f"annotations_{annotator_name.strip()}.csv",
-                mime="text/csv",
-                help="只包含你自己的標註資料",
-            )
+    
 
     if (
         st.session_state.page == "annotation"
@@ -1046,17 +1035,7 @@ else:
         st.divider()
 
         # ── 說明框：目前各部位推斷結果（輔助標註者理解） ──
-        with st.expander("📊 目前各部位情緒推斷（點擊展開）", expanded=False):
-            for group_name, feat_type in [("眼睛", "core"), ("耳朵", "core"), ("尾巴", "aux"), ("四肢", "aux")]:
-                src = selected_core_all if feat_type == "core" else selected_aux_all
-                unk = unknown_core_groups if feat_type == "core" else unknown_aux_groups
-                res = infer_group_emotion(src, unk, feat_type, group_name)
-                if res["status"] == "unknown":
-                    st.write(f"**{group_name}**：無法判斷 / 未選擇")
-                elif res["status"] == "emotion":
-                    st.write(f"**{group_name}**：→ {res['emotion']}")
-                else:
-                    st.write(f"**{group_name}**：衝突（{res['all_emotions']}）")
+        
 
         col_check, col_next = st.columns(2)
 
@@ -1492,9 +1471,20 @@ else:
             col_save, col_sync = st.columns(2)
 
             with col_save:
+                # ─── 下載自己的 CSV（只含自己的標註）───
+                if annotator_name:
+                        df_mine = load_existing_annotations(annotator_name)
+                        if not df_mine.empty:
+                            csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+                            st.download_button(
+                                label="⬇️ 下載我的標註 CSV",
+                                data=csv_bytes,
+                                file_name=f"annotations_{annotator_name.strip()}.csv",
+                                mime="text/csv",
+                                help="只包含你自己的標註資料",
+                            )
                 if st.button(
-                    "💾 儲存（並下載 CSV）",
-                    key=f"save_local_{st.session_state.current_index}",
+                   
                 ):
                     if inconsistency_msg and st.session_state[confirm_key] != "confirmed":
                         st.session_state[confirm_key] = "pending"
