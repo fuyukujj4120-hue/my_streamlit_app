@@ -1208,15 +1208,10 @@ else:
                 key=f"final_emotion_force_{st.session_state.current_index}",
             )
         else:
-            default_idx = (
-                MAIN_EMOTIONS.index(suggested_emotion)
-                if suggested_emotion in MAIN_EMOTIONS
-                else None
-            )
             selected_final = st.radio(
                 "請選擇最終主導情緒",
                 MAIN_EMOTIONS,
-                index=default_idx,
+                index=None,
                 key=f"final_emotion_radio_{st.session_state.current_index}",
             )
 
