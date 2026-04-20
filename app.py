@@ -1283,7 +1283,6 @@ else:
             st.markdown(
                 f'<div class="ok-box">'
                 f'<b>信心程度：高等</b><br>'
-                f'建議情緒：<b>{suggested_emotion}</b>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -1291,7 +1290,6 @@ else:
             st.markdown(
                 f'<div class="warn-box">'
                 f'<b>信心程度：中等</b><br>'
-                f'建議情緒：<b>{suggested_emotion}</b>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -1323,7 +1321,7 @@ else:
             if suggested_emotion and selected_final != suggested_emotion:
                 inconsistency_msg = (
                     f"你選擇的最終情緒「{selected_final}」"
-                    f"與前述標註「{suggested_emotion}」**不一致**。"
+                    f"與前述標註不一致**。"
                 )
 
         if inconsistency_msg:
@@ -1483,7 +1481,8 @@ else:
                                 mime="text/csv",
                                 help="只包含你自己的標註資料",
                             )
-                
+            
+
             with col_sync:
                 if st.button(
                     "☁️ 儲存並同步 Google Sheet",
