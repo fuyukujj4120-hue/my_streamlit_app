@@ -107,6 +107,7 @@ VIDEOS = [
     }
     for name in video_names
 ]
+
 OUTPUT_DIR = Path("annotations")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -121,6 +122,7 @@ ANNOTATION_RULES = [
     "若某一部位無法觀察，勾選「無法判斷」即可",
 ]
 
+# 已整理，且允許相同行為出現在不同情緒
 EMOTION_SCHEMA = {
     "害怕": {
         "definition": "由立即感知到的危險或危險威脅引起，表現為警惕、撤退或逃跑。",
@@ -137,13 +139,12 @@ EMOTION_SCHEMA = {
             "尾巴": ["夾在身體下方", "繞在身體旁"],
             "四肢": ["毛豎起（炸毛）", "身體緊繃", "發抖", "壓低身體"],
             "行為": [
-                "高度警戒",
-                "受驚反應",
                 "僵住不動",
                 "躲藏",
                 "逃避／迴避",
                 "梳理毛髮",
-                "缺乏進食、飲水、排泄或睡眠等基本維持行為",
+                "觀察個體或物體",
+                "探索環境",
             ],
         },
     },
@@ -156,7 +157,12 @@ EMOTION_SCHEMA = {
         "aux_features": {
             "尾巴": ["壓低且僵硬", "呈倒 L 形", "拍打地面", "快速左右或上下甩動（tail lash）"],
             "四肢": ["毛髮豎立（沿脊椎與尾巴）", "身體前傾", "臀部抬高", "拱背站立", "露出牙齒"],
-            "行為": ["撲向或追逐目標", "用爪或口攻擊", "驅趕其他個體"],
+            "行為": [
+                "撲向或追逐目標",
+                "用爪或口攻擊",
+                "驅趕其他個體",
+                "觀察個體或物體",
+            ],
         },
     },
     "歡樂/玩耍": {
@@ -172,9 +178,10 @@ EMOTION_SCHEMA = {
                 "攀爬、奔跑",
                 "跳躍、拍打、撥弄",
                 "用前肢抓住對方或物體",
-                "翻滾、露腹、扭打、踢擊、追逐",
-                "嗅聞、舔舐、咬、啃、丟擲物體",
-                "潛行、撲擊等遊戲性捕獵行為",
+                "翻滾／露腹",
+                "追逐／撲擊",
+                "嗅聞／舔舐",
+                "抓物體",
             ],
         },
     },
@@ -190,12 +197,11 @@ EMOTION_SCHEMA = {
             "行為": [
                 "伸展",
                 "打哈欠",
-                "自我或互相梳理毛髮",
+                "梳理毛髮",
                 "踩踏",
-                "親暱行為（碰鼻、頂頭、磨蹭）",
-                "翻滾、撒嬌",
+                "親暱／社交接觸",
+                "翻滾／露腹",
                 "進食",
-                "抓物體",
             ],
         },
     },
@@ -211,10 +217,10 @@ EMOTION_SCHEMA = {
             "行為": [
                 "觀察個體或物體",
                 "探索環境",
-                "嗅聞、舔舐",
+                "嗅聞／舔舐",
                 "用爪觸碰",
-                "社交接觸（碰鼻、磨蹭）",
-                "捕獵行為（潛行、追逐、撲擊、抓取、咬）",
+                "親暱／社交接觸",
+                "追逐／撲擊",
             ],
         },
     },
@@ -335,15 +341,23 @@ def build_neutral_feature_catalog(schema: dict):
     return catalog
 
 
+# 改成支援同一 feature 對應多個 emotion
 def build_feature_emotion_lookup(schema: dict):
     lookup = {"core": {}, "aux": {}}
+
     for emotion, item in schema.items():
         for group, options in item["core_features"].items():
             for feature in options:
-                lookup["core"][feature] = {"emotion": emotion, "group": group}
+                if feature not in lookup["core"]:
+                    lookup["core"][feature] = {"emotions": set(), "group": group}
+                lookup["core"][feature]["emotions"].add(emotion)
+
         for group, options in item["aux_features"].items():
             for feature in options:
-                lookup["aux"][feature] = {"emotion": emotion, "group": group}
+                if feature not in lookup["aux"]:
+                    lookup["aux"][feature] = {"emotions": set(), "group": group}
+                lookup["aux"][feature]["emotions"].add(emotion)
+
     return lookup
 
 
@@ -432,6 +446,7 @@ def render_feature_checkbox_grid(
     return selected, unknown_groups
 
 
+# 改成支援多情緒加票
 def infer_group_emotion(selected_features, unknown_groups, feature_type, group_name):
     if group_name in unknown_groups:
         return {"status": "unknown", "emotion": None, "all_emotions": {}}
@@ -444,12 +459,19 @@ def infer_group_emotion(selected_features, unknown_groups, feature_type, group_n
     if not group_features:
         return {"status": "unknown", "emotion": None, "all_emotions": {}}
 
-    counts = Counter(
-        FEATURE_LOOKUP[feature_type][f]["emotion"] for f in group_features
-    )
+    counts = Counter()
+
+    for f in group_features:
+        item = FEATURE_LOOKUP[feature_type].get(f, {})
+        for emo in item.get("emotions", []):
+            counts[emo] += 1
+
     all_emotions = dict(counts)
-    top_count = max(counts.values())
-    winners = [emo for emo, c in counts.items() if c == top_count]
+    if not all_emotions:
+        return {"status": "unknown", "emotion": None, "all_emotions": {}}
+
+    top_count = max(all_emotions.values())
+    winners = [emo for emo, c in all_emotions.items() if c == top_count]
 
     if len(winners) == 1:
         return {"status": "emotion", "emotion": winners[0], "all_emotions": all_emotions}
@@ -544,12 +566,13 @@ def evaluate_step12(
     }
 
 
+# 改成支援一個行為對多個情緒
 def evaluate_step3_auxiliary(step12_result, selected_behavior, unknown_behavior):
     if unknown_behavior or not selected_behavior:
         return {
             "met": False,
             "emotion": None,
-            "behavior_emotion": None,
+            "behavior_emotions": [],
             "matched_condition": "none",
             "multi_emotion_conflict": False,
             "conflicting_emotions": [],
@@ -558,14 +581,14 @@ def evaluate_step3_auxiliary(step12_result, selected_behavior, unknown_behavior)
         }
 
     behavior_feat = selected_behavior[0]
-    beh_info = FEATURE_LOOKUP["aux"].get(behavior_feat)
-    behavior_emotion = beh_info["emotion"] if beh_info else None
+    beh_info = FEATURE_LOOKUP["aux"].get(behavior_feat, {})
+    behavior_emotions = list(beh_info.get("emotions", []))
 
-    if not behavior_emotion:
+    if not behavior_emotions:
         return {
             "met": False,
             "emotion": None,
-            "behavior_emotion": None,
+            "behavior_emotions": [],
             "matched_condition": "none",
             "multi_emotion_conflict": False,
             "conflicting_emotions": [],
@@ -576,90 +599,80 @@ def evaluate_step3_auxiliary(step12_result, selected_behavior, unknown_behavior)
     core_candidates = step12_result.get("core_candidates", {})
     secondary_supports = step12_result.get("secondary_supports", {})
 
-    cond3_emotions = [
-        emo for emo, cnt in core_candidates.items()
-        if cnt >= 1 and behavior_emotion == emo
-    ]
-    cond4_emotions = [
-        emo for emo, cnt in secondary_supports.items()
-        if cnt >= 1 and behavior_emotion == emo
-    ]
+    matched = []
+    for emo in behavior_emotions:
+        if core_candidates.get(emo, 0) >= 1 or secondary_supports.get(emo, 0) >= 1:
+            matched.append(emo)
 
-    all_met_step3 = list(set(cond3_emotions + cond4_emotions))
+    matched = list(set(matched))
 
-    if len(all_met_step3) >= 2:
+    if len(matched) >= 2:
         return {
             "met": True,
             "emotion": None,
-            "behavior_emotion": behavior_emotion,
+            "behavior_emotions": behavior_emotions,
             "matched_condition": "conflict",
             "multi_emotion_conflict": True,
-            "conflicting_emotions": all_met_step3,
+            "conflicting_emotions": matched,
             "confidence": "低等",
-            "summary": f"⚠️ 多情緒衝突（Step3）：{', '.join(all_met_step3)} → 強制 uncertain（低等）",
+            "summary": f"⚠️ 多情緒衝突（Step3）：{', '.join(matched)} → 強制 uncertain（低等）",
         }
 
-    if cond3_emotions:
-        emo = cond3_emotions[0]
+    if len(matched) == 1:
+        emo = matched[0]
+        if core_candidates.get(emo, 0) >= 1:
+            cond = "cond3"
+            msg = "✅ 條件三達成：1 個主要特徵 + 行為一致 → 信心中等"
+        else:
+            cond = "cond4"
+            msg = "✅ 條件四達成：1 個次要特徵 + 行為一致 → 信心中等"
+
         return {
             "met": True,
             "emotion": emo,
-            "behavior_emotion": behavior_emotion,
-            "matched_condition": "cond3",
+            "behavior_emotions": behavior_emotions,
+            "matched_condition": cond,
             "multi_emotion_conflict": False,
             "conflicting_emotions": [],
             "confidence": "中等",
-            "summary": "✅ 條件三達成：1 個主要特徵 + 行為一致 → 信心中等",
-        }
-
-    if cond4_emotions:
-        emo = cond4_emotions[0]
-        return {
-            "met": True,
-            "emotion": emo,
-            "behavior_emotion": behavior_emotion,
-            "matched_condition": "cond4",
-            "multi_emotion_conflict": False,
-            "conflicting_emotions": [],
-            "confidence": "中等",
-            "summary": "✅ 條件四達成：1 個次要特徵 + 行為一致 → 信心中等",
+            "summary": msg,
         }
 
     return {
         "met": False,
         "emotion": None,
-        "behavior_emotion": behavior_emotion,
+        "behavior_emotions": behavior_emotions,
         "matched_condition": "none",
         "multi_emotion_conflict": False,
         "conflicting_emotions": [],
         "confidence": "低等",
-        "summary": f"⚠️ 行為（{behavior_emotion}）無法與已選特徵形成條件 → uncertain（低等）",
+        "summary": "⚠️ 行為無法與已選特徵形成條件 → uncertain（低等）",
     }
 
 
 def evaluate_step3_supplement(step12_emotion, selected_behavior, unknown_behavior):
     if unknown_behavior or not selected_behavior:
         return {
-            "behavior_emotion": None,
+            "behavior_emotions": [],
             "confidence": "中等",
             "summary": "行為無法判斷，維持中等信心",
         }
 
     behavior_feat = selected_behavior[0]
-    beh_info = FEATURE_LOOKUP["aux"].get(behavior_feat)
-    behavior_emotion = beh_info["emotion"] if beh_info else None
+    beh_info = FEATURE_LOOKUP["aux"].get(behavior_feat, {})
+    behavior_emotions = list(beh_info.get("emotions", []))
 
-    if behavior_emotion == step12_emotion:
+    if step12_emotion in behavior_emotions:
         return {
-            "behavior_emotion": behavior_emotion,
+            "behavior_emotions": behavior_emotions,
             "confidence": "高等",
-            "summary": f"✅ 行為與前述標註一致→ 高等信心",
+            "summary": "✅ 行為與前述標註一致 → 高等信心",
         }
     else:
         return {
-            "behavior_emotion": behavior_emotion,
+            "behavior_emotions": behavior_emotions,
             "confidence": "中等",
-            "summary": f"⚠️ 行為（{behavior_emotion}）與前述標註不同 → 中等信心",
+            "summary": f"⚠️ 行為（{', '.join(behavior_emotions) if behavior_emotions else '無對應情緒'}）與前述標註不同 → 中等信心",
         }
 
 
@@ -1111,12 +1124,12 @@ else:
                 st.session_state.step3_unknown_behavior = behavior_unknown
 
                 if step12_result and step12_result.get("multi_emotion_conflict"):
-                    beh_info = FEATURE_LOOKUP["aux"].get(selected_behavior[0]) if selected_behavior else None
-                    behavior_emotion = beh_info["emotion"] if beh_info else None
+                    beh_info = FEATURE_LOOKUP["aux"].get(selected_behavior[0], {}) if selected_behavior else {}
+                    behavior_emotions = list(beh_info.get("emotions", []))
                     st.session_state.step3_result = {
                         "mode": "conflict_forced",
                         "emotion": None,
-                        "behavior_emotion": behavior_emotion,
+                        "behavior_emotions": behavior_emotions,
                         "confidence": "低等",
                         "multi_emotion_conflict": True,
                         "conflicting_emotions": step12_result.get("conflicting_emotions", []),
@@ -1132,7 +1145,7 @@ else:
                     st.session_state.step3_result = {
                         "mode": "supplement",
                         "emotion": step12_result["emotion"],
-                        "behavior_emotion": result3["behavior_emotion"],
+                        "behavior_emotions": result3["behavior_emotions"],
                         "confidence": result3["confidence"],
                         "multi_emotion_conflict": False,
                         "conflicting_emotions": [],
@@ -1148,7 +1161,7 @@ else:
                     st.session_state.step3_result = {
                         "mode": "auxiliary",
                         "emotion": result3["emotion"],
-                        "behavior_emotion": result3["behavior_emotion"],
+                        "behavior_emotions": result3["behavior_emotions"],
                         "confidence": result3["confidence"],
                         "multi_emotion_conflict": result3.get("multi_emotion_conflict", False),
                         "conflicting_emotions": result3.get("conflicting_emotions", []),
@@ -1195,9 +1208,6 @@ else:
         force_uncertain = is_force_uncertain()
         suggested_emotion = get_suggested_emotion()
         confidence = step3_result.get("confidence", "低等")
-
-        step12_provisional = step12_result.get("emotion")
-        step3_provisional = step3_result.get("emotion")
 
         st.markdown("## Step 4：最終情緒確認")
         st.markdown(f"- **Step 1+2 結果：** {step12_result.get('summary', '—')}")
@@ -1302,45 +1312,30 @@ else:
                 or step3_result.get("multi_emotion_conflict")
             )
 
-            provisional_emotion = suggested_emotion or ""
-
             return {
                 "record_id": compute_record_id(annotator_name.strip(), current_video_name),
                 "video_file": current_video_name,
-
                 "eye_selected": json.dumps(eye_selected, ensure_ascii=False),
                 "ear_selected": json.dumps(ear_selected, ensure_ascii=False),
                 "tail_selected": json.dumps(tail_selected, ensure_ascii=False),
                 "limb_selected": json.dumps(limb_selected, ensure_ascii=False),
                 "behavior_selected": json.dumps(st.session_state.step3_selected_behavior, ensure_ascii=False),
-
-                # 暫定情緒
-                
                 "suggested_emotion": suggested_emotion or "",
-
-                # 多情緒
                 "is_multi_emotion": str(is_multi_emotion),
                 "multi_emotion_conflict": str(is_multi_emotion),
                 "conflicting_emotions": json.dumps(conflicting, ensure_ascii=False),
-
-             # 最終
                 "final_emotion": final_emotion,
                 "final_matches_suggested": str(final_emotion == (suggested_emotion or "")),
-
-                # 信心與條件
                 "confidence": confidence,
                 "step12_condition": step12_result.get("matched_condition", "none"),
                 "step12_summary": step12_result.get("summary", ""),
                 "step3_mode": step3_result.get("mode", ""),
                 "step3_summary": step3_result.get("summary", ""),
-
-                # 原始勾選
                 "step1_selected_core_all": json.dumps(st.session_state.step1_selected_core, ensure_ascii=False),
                 "step1_unknown_core_groups": json.dumps(st.session_state.step1_unknown_core, ensure_ascii=False),
                 "step2_selected_aux_all": json.dumps(st.session_state.step2_selected_aux, ensure_ascii=False),
                 "step2_unknown_aux_groups": json.dumps(st.session_state.step2_unknown_aux, ensure_ascii=False),
                 "step3_unknown_behavior": str(st.session_state.step3_unknown_behavior),
-
                 "note": note,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
@@ -1368,6 +1363,7 @@ else:
             with c2:
                 if st.button("❌ 否，重新標註", use_container_width=True,
                              key=f"confirm_no_{st.session_state.current_index}"):
+
                     st.session_state[confirm_key] = None
                     go_to_step1()
 
