@@ -1483,29 +1483,7 @@ else:
                                 mime="text/csv",
                                 help="只包含你自己的標註資料",
                             )
-                if st.button(
-                   
-                ):
-                    if inconsistency_msg and st.session_state[confirm_key] != "confirmed":
-                        st.session_state[confirm_key] = "pending"
-                        st.rerun()
-                    else:
-                        record = build_record(selected_final)
-                        if record:
-                            upsert_annotation(record, annotator_name)
-                            st.session_state.completed = len(load_existing_annotations(annotator_name))
-                            df_mine = load_existing_annotations(annotator_name)
-                            csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                            st.success("✅ 已儲存！可在左側側邊欄或下方下載 CSV。")
-                            st.download_button(
-                                label="⬇️ 下載我的標註 CSV",
-                                data=csv_bytes,
-                                file_name=f"annotations_{annotator_name.strip()}.csv",
-                                mime="text/csv",
-                                key=f"dl_after_save_{st.session_state.current_index}",
-                            )
-                            st.session_state[confirm_key] = None
-
+                
             with col_sync:
                 if st.button(
                     "☁️ 儲存並同步 Google Sheet",
