@@ -17,12 +17,10 @@ st.markdown(
         width: 560px !important;
         min-width: 560px !important;
     }
-
     section[data-testid="stSidebar"] > div {
         width: 560px !important;
         min-width: 560px !important;
     }
-
     section[data-testid="stSidebar"] video {
         width: 500px !important;
         height: 400px !important;
@@ -32,7 +30,6 @@ st.markdown(
         display: block !important;
         margin: 0 auto !important;
     }
-
     .result-box {
         padding: 12px 14px;
         border-radius: 10px;
@@ -41,7 +38,6 @@ st.markdown(
         margin-top: 8px;
         margin-bottom: 12px;
     }
-
     .warn-box {
         padding: 12px 14px;
         border-radius: 10px;
@@ -50,7 +46,6 @@ st.markdown(
         margin-top: 8px;
         margin-bottom: 12px;
     }
-
     .ok-box {
         padding: 12px 14px;
         border-radius: 10px;
@@ -59,7 +54,6 @@ st.markdown(
         margin-top: 8px;
         margin-bottom: 12px;
     }
-
     .low-box {
         padding: 12px 14px;
         border-radius: 10px;
@@ -68,13 +62,10 @@ st.markdown(
         margin-top: 8px;
         margin-bottom: 12px;
     }
-
-    /* 放大「請選擇最終主導情緒」這行標題 */
     div[data-testid="stRadio"] > label p {
         font-size: 24px !important;
         font-weight: 700 !important;
     }
-
     </style>
     """,
     unsafe_allow_html=True,
@@ -100,7 +91,7 @@ FEATURE_GROUPS = ["眼睛", "耳朵", "尾巴", "四肢", "行為"]
 ANNOTATION_RULES = [
     "請先完整觀看，再進行標註",
     "每一段影片只選 1 類主情緒（主導情緒定義為在該片段中出現時間最長且最具代表性的情緒狀態）",
-    "標註流程分為四步：Step 1 眼睛/耳朵；Step 2 尾巴/四肢；Step 3 行為；Step 4 最終情緒確認",
+    "標註流程分為三步：Step 1 眼睛/耳朵；Step 2 尾巴/四肢；Step 3 行為（補充 或 輔助判定）",
     "每個步驟需依據可觀察特徵勾選，不憑主觀猜測",
     "若某一部位無法觀察，勾選「無法判斷」即可",
 ]
@@ -250,119 +241,6 @@ def append_to_google_sheet(record: dict, annotator_name: str):
         raise ValueError(data.get("error", "Unknown Google Sheet error"))
 
 
-# ─────────────────────────────────────────────
-# [FIX] 新增：從 Google Sheet 讀取所有標註，
-#       計算同一影片不同標註者之間的一致性
-# ─────────────────────────────────────────────
-def fetch_all_annotations_from_sheet() -> pd.DataFrame:
-    """
-    透過 GET 請求從 Google Sheet webhook 取回所有標註資料。
-    Google Apps Script 端需支援 GET 並回傳 JSON 格式：
-      { "ok": true, "data": [ {...row...}, ... ] }
-    若 webhook 不支援 GET，回傳空 DataFrame 並顯示警告。
-    """
-    try:
-        resp = requests.get(
-            SHEET_WEBHOOK_URL,
-            params={"secret": SHEET_SECRET, "action": "read_all"},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("ok") and isinstance(data.get("data"), list):
-            return pd.DataFrame(data["data"])
-        return pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
-
-
-def compute_inter_annotator_agreement(video_name: str) -> dict:
-    """
-    針對指定影片，取得所有標註者的 final_emotion，
-    計算最一致與最不一致的情緒分布。
-    回傳：
-      {
-        "total": int,
-        "counts": {emotion: count},
-        "most_common": str,
-        "agreement_rate": float,   # 最多票情緒的比例
-        "is_consistent": bool,     # agreement_rate >= 0.7 視為一致
-        "annotators": [str],
-      }
-    """
-    df = fetch_all_annotations_from_sheet()
-    if df.empty or "video_file" not in df.columns or "final_emotion" not in df.columns:
-        return None
-
-    sub = df[df["video_file"] == video_name].copy()
-    if sub.empty:
-        return None
-
-    counts = Counter(sub["final_emotion"].dropna().tolist())
-    total = sum(counts.values())
-    if total == 0:
-        return None
-
-    most_common_emotion, most_common_cnt = counts.most_common(1)[0]
-    agreement_rate = most_common_cnt / total
-
-    annotators = (
-        sub["annotator_name"].dropna().unique().tolist()
-        if "annotator_name" in sub.columns
-        else []
-    )
-
-    return {
-        "total": total,
-        "counts": dict(counts),
-        "most_common": most_common_emotion,
-        "agreement_rate": round(agreement_rate, 2),
-        "is_consistent": agreement_rate >= 0.70,
-        "annotators": annotators,
-    }
-
-
-def render_inter_annotator_panel(video_name: str):
-    """
-    在標註頁面頂端顯示跨標註者一致性面板（每個 Step 都會呼叫）。
-    """
-    with st.expander("📊 跨標註者一致性（點擊展開）", expanded=False):
-        with st.spinner("從 Google Sheet 讀取其他標註者資料…"):
-            result = compute_inter_annotator_agreement(video_name)
-
-        if result is None:
-            st.info("目前尚無其他標註者對此影片的標註資料，或無法連線到 Google Sheet。")
-            return
-
-        total = result["total"]
-        counts = result["counts"]
-        most_common = result["most_common"]
-        agreement_rate = result["agreement_rate"]
-        is_consistent = result["is_consistent"]
-        annotators = result["annotators"]
-
-        box_class = "ok-box" if is_consistent else "low-box"
-        consistency_label = "✅ 標註一致（≥70%）" if is_consistent else "⚠️ 標註不一致（<70%）"
-
-        st.markdown(
-            f"""
-            <div class="{box_class}">
-                <b>{consistency_label}</b><br>
-                共 {total} 筆標註 ｜ 最多人選：<b>{most_common}</b>（{int(agreement_rate * 100)}%）<br>
-                標註者：{', '.join(annotators) if annotators else '（無資料）'}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("**各情緒票數分布：**")
-        for emo, cnt in sorted(counts.items(), key=lambda x: -x[1]):
-            bar_pct = int((cnt / total) * 100)
-            st.markdown(f"- {emo}：{cnt} 票（{bar_pct}%）")
-
-
-# ─────────────────────────────────────────────
-
 def load_video_files():
     return VIDEOS
 
@@ -380,9 +258,6 @@ def get_annotation_file(annotator_name: str):
     return OUTPUT_DIR / f"annotations_{safe_name}.csv"
 
 
-# ─────────────────────────────────────────────
-# [FIX] record_id 改用 hash(annotator::video)
-# ─────────────────────────────────────────────
 def compute_record_id(annotator_name: str, video_name: str):
     raw = f"{annotator_name}::{video_name}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
@@ -399,13 +274,11 @@ def upsert_annotation(record: dict, annotator_name: str):
     output_path = get_annotation_file(annotator_name)
     df_old = load_existing_annotations(annotator_name)
     df_new = pd.DataFrame([record])
-
     if not df_old.empty and "record_id" in df_old.columns:
         df_old = df_old[df_old["record_id"] != record["record_id"]]
         df_all = pd.concat([df_old, df_new], ignore_index=True)
     else:
         df_all = df_new if df_old.empty else pd.concat([df_old, df_new], ignore_index=True)
-
     df_all.to_csv(output_path, index=False, encoding="utf-8-sig")
 
 
@@ -432,109 +305,6 @@ def parse_json_list(value):
         return []
 
 
-def init_session(videos):
-    defaults = {
-        "page": "instruction",
-        "current_index": 0,
-        "videos": videos,
-        "completed": 0,
-        "annotation_step": 1,
-        "step1_selected_core": [],
-        "step1_unknown_core": [],
-        "step2_selected_aux": [],
-        "step2_unknown_aux": [],
-        "step3_selected_aux": [],
-        "step3_unknown_aux": [],
-        "step1_check_result": None,
-        "step2_check_result": None,
-        "step3_check_result": None,
-        "step1_confirmed": False,
-        "step2_confirmed": False,
-        "step3_confirmed": False,
-        "step1_confirmation_state": None,
-        "step2_confirmation_state": None,
-        "step3_confirmation_state": None,
-        "loaded_saved_record_video": None,
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-
-def reset_checkbox_widget_state(video_index: int):
-    prefix_core = f"core_{video_index}_"
-    prefix_aux = f"aux_{video_index}_"
-    keys_to_delete = [
-        k for k in list(st.session_state.keys())
-        if k.startswith(prefix_core) or k.startswith(prefix_aux)
-    ]
-    for k in keys_to_delete:
-        del st.session_state[k]
-
-
-def reset_step_flow():
-    video_index = st.session_state.current_index
-    st.session_state.annotation_step = 1
-    st.session_state.step1_selected_core = []
-    st.session_state.step1_unknown_core = []
-    st.session_state.step2_selected_aux = []
-    st.session_state.step2_unknown_aux = []
-    st.session_state.step3_selected_aux = []
-    st.session_state.step3_unknown_aux = []
-    st.session_state.step1_check_result = None
-    st.session_state.step2_check_result = None
-    st.session_state.step3_check_result = None
-    st.session_state.step1_confirmed = False
-    st.session_state.step2_confirmed = False
-    st.session_state.step3_confirmed = False
-    st.session_state["step1_confirmation_state"] = None
-    st.session_state["step2_confirmation_state"] = None
-    st.session_state["step3_confirmation_state"] = None
-    st.session_state["loaded_saved_record_video"] = None
-    reset_checkbox_widget_state(video_index)
-
-    for key in [
-        f"force_uncertain_{video_index}",
-        f"step4_check_result_{video_index}",
-        f"behavior_single_{video_index}",
-        f"behavior_unknown_{video_index}",
-    ]:
-        if key in st.session_state:
-            del st.session_state[key]
-
-
-def load_saved_record_into_step_state(saved_record):
-    if not saved_record:
-        return
-    st.session_state.step1_selected_core = parse_json_list(saved_record.get("step1_selected_core_all", None))
-    st.session_state.step1_unknown_core = parse_json_list(saved_record.get("step1_unknown_core_groups", None))
-    st.session_state.step2_selected_aux = parse_json_list(saved_record.get("step2_selected_aux_all", None))
-    st.session_state.step2_unknown_aux = parse_json_list(saved_record.get("step2_unknown_aux_groups", None))
-    st.session_state.step3_selected_aux = parse_json_list(saved_record.get("step3_selected_aux_all", None))
-    st.session_state.step3_unknown_aux = parse_json_list(saved_record.get("step3_unknown_aux_groups", None))
-
-
-def render_definition_block(emotion_name: str, item: dict):
-    with st.expander(f"{emotion_name}", expanded=False):
-        img_path = DEFINITION_IMAGE_MAP.get(emotion_name)
-        if img_path and img_path.exists():
-            st.image(str(img_path), use_container_width=True)
-
-        st.write(f"**定義：** {item['definition']}")
-
-        st.write("**核心特徵**")
-        for grp, opts in item["core_features"].items():
-            st.markdown(f"- **{grp}**")
-            for i, opt in enumerate(opts, start=1):
-                st.markdown(f"  - {chr(64 + i)}. {opt}")
-
-        st.write("**次要特徵 / 輔助特徵**")
-        for grp, opts in item["aux_features"].items():
-            st.markdown(f"- **{grp}**")
-            for i, opt in enumerate(opts, start=1):
-                st.markdown(f"  - {chr(64 + i)}. {opt}")
-
-
 def build_neutral_feature_catalog(schema: dict):
     catalog = {"core": {}, "aux": {}}
     for emotion, item in schema.items():
@@ -544,7 +314,6 @@ def build_neutral_feature_catalog(schema: dict):
                     catalog["core"][feature] = {"groups": set(), "emotions": set()}
                 catalog["core"][feature]["groups"].add(group)
                 catalog["core"][feature]["emotions"].add(emotion)
-
         for group, options in item["aux_features"].items():
             for feature in options:
                 if feature not in catalog["aux"]:
@@ -560,7 +329,6 @@ def build_feature_emotion_lookup(schema: dict):
         for group, options in item["core_features"].items():
             for feature in options:
                 lookup["core"][feature] = {"emotion": emotion, "group": group}
-
         for group, options in item["aux_features"].items():
             for feature in options:
                 lookup["aux"][feature] = {"emotion": emotion, "group": group}
@@ -604,7 +372,6 @@ def render_feature_checkbox_grid(
             continue
 
         unknown_key = f"{feature_type}_{page_index}_{group_name}_unknown_group"
-
         if unknown_key not in st.session_state:
             st.session_state[unknown_key] = saved_unknown_groups.get(group_name, False)
 
@@ -616,7 +383,6 @@ def render_feature_checkbox_grid(
                 st.session_state[feature_key] = saved_values.get(feature, False)
 
         is_group_unknown = st.session_state.get(unknown_key, False)
-
         selected_in_group = [
             feature for feature, feature_key in feature_keys
             if st.session_state.get(feature_key, False)
@@ -657,21 +423,17 @@ def render_feature_checkbox_grid(
 def infer_group_emotion(selected_features, unknown_groups, feature_type, group_name):
     if group_name in unknown_groups:
         return {"status": "unknown", "emotion": None}
-
     group_features = []
     for feature in selected_features:
         item = FEATURE_LOOKUP[feature_type].get(feature)
         if item and item["group"] == group_name:
             group_features.append(feature)
-
     if not group_features:
         return {"status": "unknown", "emotion": None}
-
     emotions = [FEATURE_LOOKUP[feature_type][f]["emotion"] for f in group_features]
     counts = Counter(emotions)
     top_count = max(counts.values())
     winners = [emo for emo, c in counts.items() if c == top_count]
-
     if len(winners) == 1:
         return {"status": "emotion", "emotion": winners[0]}
     return {"status": "conflict", "emotion": None}
@@ -686,28 +448,30 @@ def get_group_selected_features(selected_features, feature_type, group_name):
     return result
 
 
-def count_step4_supports(step1_result, step2_result, step3_result):
-    overall = evaluate_step4_overall_result(step1_result, step2_result, step3_result)
-
-    if overall["mode"] != "single":
-        return 0, 0, 0
-
-    final_emo = overall["valid_emotions"][0]
-
-    core_candidates = step1_result.get("core_candidates", {}) if step1_result else {}
-    secondary_supports = step2_result.get("secondary_supports", {}) if step2_result else {}
-    behavior_emotion = step3_result.get("behavior_emotion") if step3_result else None
-
-    core_cnt = core_candidates.get(final_emo, 0)
-    sec_cnt = secondary_supports.get(final_emo, 0)
-    beh_cnt = 1 if behavior_emotion == final_emo else 0
-
-    return core_cnt, sec_cnt, beh_cnt
-
-
-def check_step1(selected_core_all, unknown_core_groups):
+# ─────────────────────────────────────────────
+# 新流程核心：Step1 + Step2 合併判定
+# 條件一：2 個主要特徵（眼 + 耳）一致 → 達成
+# 條件二：1 個主要特徵 + 1 個次要特徵（尾或肢）一致 → 達成
+# ─────────────────────────────────────────────
+def evaluate_step12(
+    selected_core_all, unknown_core_groups,
+    selected_aux_all, unknown_aux_groups
+):
+    """
+    回傳：
+    {
+        "met": bool,           # 是否達到情緒條件
+        "emotion": str|None,   # 暫定情緒（None 代表 uncertain）
+        "core_candidates": {emo: count},
+        "secondary_supports": {emo: count},
+        "matched_condition": str,  # 描述達成條件
+        "summary": str,
+    }
+    """
     eye = infer_group_emotion(selected_core_all, unknown_core_groups, "core", "眼睛")
     ear = infer_group_emotion(selected_core_all, unknown_core_groups, "core", "耳朵")
+    tail = infer_group_emotion(selected_aux_all, unknown_aux_groups, "aux", "尾巴")
+    limb = infer_group_emotion(selected_aux_all, unknown_aux_groups, "aux", "四肢")
 
     core_candidates = defaultdict(int)
     if eye["status"] == "emotion":
@@ -716,58 +480,6 @@ def check_step1(selected_core_all, unknown_core_groups):
         core_candidates[ear["emotion"]] += 1
     core_candidates = dict(core_candidates)
 
-    if eye["status"] == "emotion" and ear["status"] == "emotion" and eye["emotion"] == ear["emotion"]:
-        emo = eye["emotion"]
-        return {
-            "status": "一致",
-            "tentative_emotion": emo,
-            "core_candidates": core_candidates,
-            "summary": "一致（2 核心特徵）",
-            "needs_confirmation": False,
-        }
-
-    statuses = [eye["status"], ear["status"]]
-
-    if statuses.count("emotion") == 1 and statuses.count("unknown") == 1:
-        emo = eye["emotion"] if eye["status"] == "emotion" else ear["emotion"]
-        return {
-            "status": "部分一致",
-            "tentative_emotion": emo,
-            "core_candidates": core_candidates,
-            "summary": "部分一致（1 核心特徵）",
-            "needs_confirmation": False,
-        }
-
-    if eye["status"] == "unknown" and ear["status"] == "unknown":
-        return {
-            "status": "皆無法判斷",
-            "tentative_emotion": "uncertain",
-            "core_candidates": {},
-            "summary": "皆無法判斷（0 核心特徵）",
-            "needs_confirmation": True,
-        }
-
-    return {
-        "status": "不一致",
-        "tentative_emotion": "uncertain",
-        "core_candidates": core_candidates,
-        "summary": "不一致（核心候選不一致）",
-        "needs_confirmation": True,
-    }
-
-
-# ─────────────────────────────────────────────
-# [FIX] check_step2：不管 core_candidates 是否有值，
-#       都要記錄次要特徵的情緒，確保 cond4
-#       （1 次要 + 行為）能正常運作
-# ─────────────────────────────────────────────
-def check_step2(step1_result, selected_aux_all, unknown_aux_groups):
-    tail = infer_group_emotion(selected_aux_all, unknown_aux_groups, "aux", "尾巴")
-    limb = infer_group_emotion(selected_aux_all, unknown_aux_groups, "aux", "四肢")
-
-    core_candidates = step1_result.get("core_candidates", {}) or {}
-
-    # [FIX] 無論 core_candidates 是否為空，都先無條件記錄次要特徵的情緒
     secondary_supports = defaultdict(int)
     if tail["status"] == "emotion":
         secondary_supports[tail["emotion"]] += 1
@@ -775,386 +487,296 @@ def check_step2(step1_result, selected_aux_all, unknown_aux_groups):
         secondary_supports[limb["emotion"]] += 1
     secondary_supports = dict(secondary_supports)
 
-    if core_candidates:
-        combined = {}
-        for emo, core_cnt in core_candidates.items():
-            combined[emo] = core_cnt + secondary_supports.get(emo, 0)
+    # 條件一：2 個主要特徵一致（同一情緒核心 >= 2）
+    for emo, cnt in core_candidates.items():
+        if cnt >= 2:
+            return {
+                "met": True,
+                "emotion": emo,
+                "core_candidates": core_candidates,
+                "secondary_supports": secondary_supports,
+                "matched_condition": "cond1",
+                "summary": f"✅ 條件達成：2 個主要特徵（眼+耳）一致 → {emo}",
+            }
 
-        if combined:
-            max_score = max(combined.values())
-            winners = [emo for emo, score in combined.items() if score == max_score]
+    # 條件二：1 個主要特徵 + 1 個次要特徵一致（同一情緒）
+    for emo, core_cnt in core_candidates.items():
+        if core_cnt >= 1 and secondary_supports.get(emo, 0) >= 1:
+            return {
+                "met": True,
+                "emotion": emo,
+                "core_candidates": core_candidates,
+                "secondary_supports": secondary_supports,
+                "matched_condition": "cond2",
+                "summary": f"✅ 條件達成：1 個主要特徵 + 1 個次要特徵一致 → {emo}",
+            }
 
-            if len(winners) == 1 and max_score > 0:
-                winner = winners[0]
-                core_cnt = core_candidates.get(winner, 0)
-                sec_cnt = secondary_supports.get(winner, 0)
-                return {
-                    "status": "部分一致" if core_cnt == 1 and sec_cnt == 1 else "一致",
-                    "tentative_emotion": winner,
-                    "core_candidates": core_candidates,
-                    "secondary_supports": secondary_supports,
-                    "summary": f"{'部分一致' if core_cnt == 1 and sec_cnt == 1 else '一致'}（{core_cnt} 核心、{sec_cnt} 次要）",
-                    "needs_confirmation": False,
-                }
-
-            if len(winners) >= 2 and max_score > 0:
-                return {
-                    "status": "不一致",
-                    "tentative_emotion": "uncertain",
-                    "core_candidates": core_candidates,
-                    "secondary_supports": secondary_supports,
-                    "summary": "不一致（兩種以上情緒同樣明顯）",
-                    "needs_confirmation": True,
-                }
-
-    # core_candidates 為空時，直接依次要特徵判斷
-    if len(secondary_supports) == 1:
-        emo = list(secondary_supports.keys())[0]
-        cnt = list(secondary_supports.values())[0]
-        return {
-            "status": "部分一致" if cnt == 1 else "一致",
-            "tentative_emotion": emo,
-            "core_candidates": {},
-            "secondary_supports": secondary_supports,
-            "summary": f"{'部分一致' if cnt == 1 else '一致'}（0 核心、{cnt} 次要）",
-            "needs_confirmation": False,
-        }
-
-    if len(secondary_supports) >= 2:
-        return {
-            "status": "不一致",
-            "tentative_emotion": "uncertain",
-            "core_candidates": core_candidates,
-            "secondary_supports": secondary_supports,
-            "summary": "不一致（次要特徵指向不同情緒）",
-            "needs_confirmation": True,
-        }
-
-    if tail["status"] == "unknown" and limb["status"] == "unknown":
-        return {
-            "status": "皆無法判斷",
-            "tentative_emotion": "uncertain",
-            "core_candidates": core_candidates,
-            "secondary_supports": secondary_supports,
-            "summary": "皆無法判斷",
-            "needs_confirmation": True,
-        }
-
+    # 未達條件
     return {
-        "status": "不一致",
-        "tentative_emotion": "uncertain",
+        "met": False,
+        "emotion": None,
         "core_candidates": core_candidates,
         "secondary_supports": secondary_supports,
-        "summary": "不一致",
-        "needs_confirmation": True,
+        "matched_condition": "none",
+        "summary": "⏳ Step1 + Step2 尚未達到情緒條件，需進入 Step3 輔助判定",
     }
 
 
-def check_step3(step1_result, step2_result, selected_aux_all, unknown_aux_groups):
-    behavior = infer_group_emotion(selected_aux_all, unknown_aux_groups, "aux", "行為")
-    behavior_emotion = behavior["emotion"] if behavior["status"] == "emotion" else None
-
-    core_candidates = step1_result.get("core_candidates", {}) or {}
-    secondary_supports = step2_result.get("secondary_supports", {}) or {}
-    tentative_emotion = step2_result.get("tentative_emotion", "uncertain")
-
-    if tentative_emotion != "uncertain":
-        if behavior_emotion == tentative_emotion:
-            return {
-                "status": "一致",
-                "final_emotion": tentative_emotion,
-                "behavior_emotion": behavior_emotion,
-                "summary": "一致（行為支持前述判斷）",
-                "reason": "行為支持目前主情緒。",
-                "needs_confirmation": False,
-                "confidence": "高",
-            }
-
-        if behavior_emotion is None:
-            return {
-                "status": "部分一致",
-                "final_emotion": tentative_emotion,
-                "behavior_emotion": behavior_emotion,
-                "summary": "部分一致（行為無法判斷）",
-                "reason": "已有主情緒，但行為無法提供額外支持。",
-                "needs_confirmation": False,
-                "confidence": "中",
-            }
-
+# ─────────────────────────────────────────────
+# Step3 輔助判定（僅在 Step1+2 未達條件時使用）
+# 條件三：1 個主要特徵 + 輔助（行為）一致
+# 條件四：1 個次要特徵 + 輔助（行為）一致
+# ─────────────────────────────────────────────
+def evaluate_step3_auxiliary(
+    step12_result: dict,
+    selected_behavior: list,
+    unknown_behavior: bool,
+):
+    """
+    回傳：
+    {
+        "met": bool,
+        "emotion": str|None,
+        "behavior_emotion": str|None,
+        "matched_condition": str,
+        "confidence": str,   # "中等" | "低等"
+        "summary": str,
+    }
+    """
+    if unknown_behavior or not selected_behavior:
         return {
-            "status": "不一致",
-            "final_emotion": "uncertain",
-            "behavior_emotion": behavior_emotion,
-            "summary": "不一致",
-            "reason": "已有主情緒，但行為不支持目前主情緒。",
-            "needs_confirmation": True,
-            "confidence": "低",
+            "met": False,
+            "emotion": None,
+            "behavior_emotion": None,
+            "matched_condition": "none",
+            "confidence": "低等",
+            "summary": "⚠️ 行為無法判斷，仍未達情緒條件 → uncertain（低等）",
         }
 
-    if behavior_emotion:
-        if core_candidates.get(behavior_emotion, 0) >= 1:
-            return {
-                "status": "部分一致",
-                "final_emotion": behavior_emotion,
-                "behavior_emotion": behavior_emotion,
-                "summary": "部分一致（1 個主要特徵 + 輔助特徵一致）",
-                "reason": "行為支持其中一個核心候選。",
-                "needs_confirmation": False,
-                "confidence": "中",
-            }
+    behavior_feat = selected_behavior[0]
+    beh_info = FEATURE_LOOKUP["aux"].get(behavior_feat)
+    behavior_emotion = beh_info["emotion"] if beh_info else None
 
-        if secondary_supports.get(behavior_emotion, 0) >= 1:
-            return {
-                "status": "部分一致",
-                "final_emotion": behavior_emotion,
-                "behavior_emotion": behavior_emotion,
-                "summary": "部分一致（1 個次要特徵 + 輔助特徵一致）",
-                "reason": "行為支持其中一個次要候選。",
-                "needs_confirmation": False,
-                "confidence": "中",
-            }
-
+    if not behavior_emotion:
         return {
-            "status": "不一致",
-            "final_emotion": "uncertain",
+            "met": False,
+            "emotion": None,
+            "behavior_emotion": None,
+            "matched_condition": "none",
+            "confidence": "低等",
+            "summary": "⚠️ 行為特徵無對應情緒，仍未達情緒條件 → uncertain（低等）",
+        }
+
+    core_candidates = step12_result.get("core_candidates", {})
+    secondary_supports = step12_result.get("secondary_supports", {})
+
+    # 條件三：1 個主要特徵 + 行為一致
+    if core_candidates.get(behavior_emotion, 0) >= 1:
+        return {
+            "met": True,
+            "emotion": behavior_emotion,
             "behavior_emotion": behavior_emotion,
-            "summary": "不一致",
-            "reason": "行為有情緒，但無法支持任何目前候選情緒。",
-            "needs_confirmation": True,
-            "confidence": "低",
+            "matched_condition": "cond3",
+            "confidence": "中等",
+            "summary": f"✅ 條件達成：1 個主要特徵 + 行為一致 → {behavior_emotion}（中等）",
+        }
+
+    # 條件四：1 個次要特徵 + 行為一致
+    if secondary_supports.get(behavior_emotion, 0) >= 1:
+        return {
+            "met": True,
+            "emotion": behavior_emotion,
+            "behavior_emotion": behavior_emotion,
+            "matched_condition": "cond4",
+            "confidence": "中等",
+            "summary": f"✅ 條件達成：1 個次要特徵 + 行為一致 → {behavior_emotion}（中等）",
         }
 
     return {
-        "status": "不一致",
-        "final_emotion": "uncertain",
+        "met": False,
+        "emotion": None,
         "behavior_emotion": behavior_emotion,
-        "summary": "不一致",
-        "reason": "行為無法判斷，因此無法支持任一情緒。",
-        "needs_confirmation": True,
-        "confidence": "低",
+        "matched_condition": "none",
+        "confidence": "低等",
+        "summary": f"⚠️ 行為（{behavior_emotion}）無法與任何已選特徵形成條件 → uncertain（低等）",
     }
-
-
-def evaluate_step4_overall_result(step1_result, step2_result, step3_result):
-    core_candidates = step1_result.get("core_candidates", {}) if step1_result else {}
-    secondary_supports = step2_result.get("secondary_supports", {}) if step2_result else {}
-    behavior_emotion = step3_result.get("behavior_emotion") if step3_result else None
-
-    total_support = defaultdict(lambda: {"core": 0, "secondary": 0, "behavior": 0})
-
-    for emo, cnt in core_candidates.items():
-        total_support[emo]["core"] = cnt
-    for emo, cnt in secondary_supports.items():
-        total_support[emo]["secondary"] = cnt
-    if behavior_emotion:
-        total_support[behavior_emotion]["behavior"] = 1
-
-    valid_emotions = []
-    for emo, support in total_support.items():
-        core_cnt = support["core"]
-        sec_cnt = support["secondary"]
-        beh_cnt = support["behavior"]
-
-        cond1 = core_cnt >= 2
-        cond2 = core_cnt >= 1 and sec_cnt >= 1
-        cond3 = core_cnt >= 1 and beh_cnt >= 1
-        cond4 = sec_cnt >= 1 and beh_cnt >= 1
-
-        if cond1 or cond2 or cond3 or cond4:
-            valid_emotions.append(emo)
-
-    if len(valid_emotions) >= 2:
-        return {
-            "mode": "multiple",
-            "valid_emotions": valid_emotions,
-            "message": "多種情緒",
-            "force_uncertain": True,
-        }
-
-    if len(valid_emotions) == 1:
-        return {
-            "mode": "single",
-            "valid_emotions": valid_emotions,
-            "message": "已形成單一情緒條件",
-            "force_uncertain": False,
-        }
-
-    return {
-        "mode": "none",
-        "valid_emotions": [],
-        "message": "未達最低特徵條件",
-        "force_uncertain": False,
-    }
-
-
-def evaluate_final_label_consistency(final_label, step1_result, step2_result, step3_result):
-    overall = evaluate_step4_overall_result(step1_result, step2_result, step3_result)
-
-    if overall["mode"] == "multiple":
-        if final_label == "uncertain":
-            return {
-                "is_consistent": True,
-                "message": "多種情緒",
-                "confidence": "低信心",
-            }
-        return {
-            "is_consistent": False,
-            "message": "標註情緒與所選特徵條件不符",
-            "confidence": "低信心",
-        }
-
-    if overall["mode"] == "single":
-        checked_emotion = overall["valid_emotions"][0]
-        if final_label == checked_emotion:
-            return {
-                "is_consistent": True,
-                "message": "標註情緒與所選特徵條件相符",
-                "confidence": "高信心",
-            }
-        if final_label == "uncertain":
-            return {
-                "is_consistent": True,
-                "message": "標註為 uncertain",
-                "confidence": "低信心",
-            }
-        return {
-            "is_consistent": False,
-            "message": "標註情緒與所選特徵條件不符",
-            "confidence": "低信心",
-        }
-
-    if final_label == "uncertain":
-        return {
-            "is_consistent": True,
-            "message": "標註為 uncertain",
-            "confidence": "低信心",
-        }
-
-    return {
-        "is_consistent": True,
-        "message": "未達最低特徵條件",
-        "confidence": "低信心",
-    }
-
-
-def render_check_result_box(title, result):
-    st.markdown(f"### {title}")
-    st.markdown(
-        f"""
-        <div class="result-box">
-            <b>判定狀態：</b> {result['status']}<br>
-            <b>結果摘要：</b> {result['summary']}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_confirmation_ui(step_prefix: str, result: dict):
-    state_key = f"{step_prefix}_confirmation_state"
-
-    if state_key not in st.session_state:
-        st.session_state[state_key] = None
-
-    if not result.get("needs_confirmation", False):
-        return True
-
-    if st.session_state[state_key] == "yes":
-        return True
-
-    if st.session_state[state_key] == "no":
-        return False
-
-    st.markdown(
-        f"""
-        <div class="warn-box">
-            <b>{result['status']}</b><br>
-            請確認標註無誤：是 / 否
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    col_yes, col_no = st.columns(2)
-    with col_yes:
-        yes_clicked = st.button("是，標註無誤", key=f"{step_prefix}_confirm_yes")
-    with col_no:
-        no_clicked = st.button("否，重新標註", key=f"{step_prefix}_confirm_no")
-
-    if yes_clicked:
-        st.session_state[state_key] = "yes"
-        st.rerun()
-
-    if no_clicked:
-        st.session_state[state_key] = "no"
-        st.rerun()
-
-    return None
 
 
 # ─────────────────────────────────────────────
-# [FIX] 新增：在每個步驟頂端顯示「目前步驟一致性」
-#       即時提醒使用者目前累積的特徵指向哪個情緒
+# Step3 補充判定（Step1+2 已達條件時）
 # ─────────────────────────────────────────────
-def render_live_consistency_banner(step: int):
+def evaluate_step3_supplement(
+    step12_emotion: str,
+    selected_behavior: list,
+    unknown_behavior: bool,
+):
     """
-    在 Step 1~4 頂端顯示目前累積情緒一致性狀態提醒。
-    只要前一步驟有結果就顯示。
+    回傳：
+    {
+        "behavior_emotion": str|None,
+        "confidence": str,  # "高等" | "中等"
+        "summary": str,
+    }
     """
-    s1 = st.session_state.step1_check_result
-    s2 = st.session_state.step2_check_result
-    s3 = st.session_state.step3_check_result
+    if unknown_behavior or not selected_behavior:
+        return {
+            "behavior_emotion": None,
+            "confidence": "中等",
+            "summary": "行為無法判斷，維持中等信心",
+        }
 
-    lines = []
+    behavior_feat = selected_behavior[0]
+    beh_info = FEATURE_LOOKUP["aux"].get(behavior_feat)
+    behavior_emotion = beh_info["emotion"] if beh_info else None
 
-    if step >= 2 and s1:
-        tentative = s1.get("tentative_emotion", "—")
-        lines.append(f"**Step 1（眼耳）初步判斷：** {tentative}　｜　狀態：{s1['status']}")
-
-    if step >= 3 and s2:
-        tentative = s2.get("tentative_emotion", "—")
-        lines.append(f"**Step 2（尾/四肢）：** {tentative}　｜　狀態：{s2['status']}")
-
-    if step >= 4 and s3:
-        final = s3.get("final_emotion", "—")
-        lines.append(f"**Step 3（行為）：** {final}　｜　狀態：{s3['status']}")
-
-    if not lines:
-        return
-
-    overall = evaluate_step4_overall_result(s1, s2, s3)
-    if overall["mode"] == "single":
-        box_class = "ok-box"
-        overall_msg = f"✅ 目前累積：<b>{overall['valid_emotions'][0]}</b>（已達情緒成立條件）"
-    elif overall["mode"] == "multiple":
-        box_class = "low-box"
-        valid_str = "、".join(overall["valid_emotions"])
-        overall_msg = f"⚠️ 目前累積：多種情緒（{valid_str}），最終將強制標為 uncertain"
+    if behavior_emotion == step12_emotion:
+        return {
+            "behavior_emotion": behavior_emotion,
+            "confidence": "高等",
+            "summary": f"✅ 行為與暫定情緒一致（{step12_emotion}）→ 高等信心",
+        }
     else:
-        box_class = "warn-box"
-        overall_msg = "⏳ 目前累積：尚未達到情緒成立條件，請繼續標註"
+        return {
+            "behavior_emotion": behavior_emotion,
+            "confidence": "中等",
+            "summary": f"⚠️ 行為（{behavior_emotion}）與暫定情緒（{step12_emotion}）不同 → 中等信心",
+        }
 
-    body = "<br>".join(lines)
-    st.markdown(
-        f"""
-        <div class="{box_class}" style="margin-bottom:16px;">
-            {overall_msg}<br><hr style="margin:6px 0; border-color:#ccc;">
-            {body}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+
+def render_definition_block(emotion_name: str, item: dict):
+    with st.expander(f"{emotion_name}", expanded=False):
+        img_path = DEFINITION_IMAGE_MAP.get(emotion_name)
+        if img_path and img_path.exists():
+            st.image(str(img_path), use_container_width=True)
+        st.write(f"**定義：** {item['definition']}")
+        st.write("**核心特徵**")
+        for grp, opts in item["core_features"].items():
+            st.markdown(f"- **{grp}**")
+            for i, opt in enumerate(opts, start=1):
+                st.markdown(f"  - {chr(64 + i)}. {opt}")
+        st.write("**次要特徵 / 輔助特徵**")
+        for grp, opts in item["aux_features"].items():
+            st.markdown(f"- **{grp}**")
+            for i, opt in enumerate(opts, start=1):
+                st.markdown(f"  - {chr(64 + i)}. {opt}")
 
 
 FEATURE_CATALOG = build_neutral_feature_catalog(EMOTION_SCHEMA)
 FEATURE_LOOKUP = build_feature_emotion_lookup(EMOTION_SCHEMA)
 
+
+def init_session(videos):
+    defaults = {
+        "page": "instruction",
+        "current_index": 0,
+        "videos": videos,
+        "completed": 0,
+        "annotation_step": 1,
+        # Step1 core
+        "step1_selected_core": [],
+        "step1_unknown_core": [],
+        # Step2 aux (tail + limb)
+        "step2_selected_aux": [],
+        "step2_unknown_aux": [],
+        # Step12 combined result
+        "step12_result": None,
+        "step12_confirmed": False,
+        # Step3
+        "step3_selected_behavior": [],
+        "step3_unknown_behavior": False,
+        "step3_result": None,
+        # loaded
+        "loaded_saved_record_video": None,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+
+def reset_checkbox_widget_state(video_index: int):
+    prefix_core = f"core_{video_index}_"
+    prefix_aux = f"aux_{video_index}_"
+    keys_to_delete = [
+        k for k in list(st.session_state.keys())
+        if k.startswith(prefix_core) or k.startswith(prefix_aux)
+    ]
+    for k in keys_to_delete:
+        del st.session_state[k]
+
+
+def reset_step_flow():
+    video_index = st.session_state.current_index
+    st.session_state.annotation_step = 1
+    st.session_state.step1_selected_core = []
+    st.session_state.step1_unknown_core = []
+    st.session_state.step2_selected_aux = []
+    st.session_state.step2_unknown_aux = []
+    st.session_state.step12_result = None
+    st.session_state.step12_confirmed = False
+    st.session_state.step3_selected_behavior = []
+    st.session_state.step3_unknown_behavior = False
+    st.session_state.step3_result = None
+    st.session_state["loaded_saved_record_video"] = None
+    reset_checkbox_widget_state(video_index)
+
+    for key in [
+        f"step12_check_done_{video_index}",
+        f"behavior_single_{video_index}",
+        f"behavior_unknown_{video_index}",
+        f"step3_check_done_{video_index}",
+        f"final_emotion_radio_{video_index}",
+        f"final_emotion_force_{video_index}",
+    ]:
+        if key in st.session_state:
+            del st.session_state[key]
+
+
+# ─────────────────────────────────────────────
+# 頂端進度橫幅
+# ─────────────────────────────────────────────
+def render_progress_banner():
+    step = st.session_state.annotation_step
+    step12 = st.session_state.step12_result
+
+    labels = ["Step 1+2：眼耳 / 尾肢", "Step 3：行為", "Step 4：最終確認"]
+    step_map = {1: 0, 2: 1, 3: 2}  # annotation_step → label index
+    current_label_idx = step_map.get(step, 2)
+
+    cols = st.columns(3)
+    for i, label in enumerate(labels):
+        with cols[i]:
+            if i < current_label_idx:
+                st.markdown(f"✅ **{label}**")
+            elif i == current_label_idx:
+                st.markdown(f"▶️ **{label}**")
+            else:
+                st.markdown(f"⬜ {label}")
+
+    if step12:
+        if step12["met"]:
+            box_class = "ok-box"
+            msg = f"暫定情緒：<b>{step12['emotion']}</b> ｜ {step12['summary']}"
+        else:
+            box_class = "warn-box"
+            msg = step12["summary"]
+        st.markdown(
+            f'<div class="{box_class}" style="margin-top:8px;">{msg}</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+
+
+# ─────────────────────────────────────────────
+# 主程式
+# ─────────────────────────────────────────────
 st.title(APP_TITLE)
-st.caption("流程：Step 1 → Step 2 → Step 3 → Step 4（最終情緒確認）")
+st.caption("流程：Step 1+2（眼耳/尾肢）→ Step 3（行為）→ Step 4（最終確認）")
 
 videos = load_video_files()
 init_session(videos)
 
+# ─── Sidebar ───
 with st.sidebar:
     st.header("標註進度")
     st.write(f"目前影片數：{len(st.session_state.videos)}")
@@ -1184,8 +806,7 @@ with st.sidebar:
         render_small_video(sidebar_video)
 
     st.markdown("---")
-    st.markdown('<div class="definition-title">情緒定義快速查看</div>', unsafe_allow_html=True)
-
+    st.markdown("**情緒定義快速查看**")
     button_labels = {
         "害怕": "😿 害怕",
         "憤怒/狂怒": "😾 憤怒/狂怒",
@@ -1193,12 +814,8 @@ with st.sidebar:
         "滿意": "😽 滿意",
         "興趣": "🐾 興趣",
     }
-
-    st.markdown('<div class="definition-card">', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
-    emotion_names = list(EMOTION_SCHEMA.keys())
-
-    for i, emotion_name in enumerate(emotion_names):
+    for i, emotion_name in enumerate(EMOTION_SCHEMA.keys()):
         target_col = col1 if i % 2 == 0 else col2
         with target_col:
             if st.button(
@@ -1208,8 +825,8 @@ with st.sidebar:
             ):
                 show_emotion_dialog(emotion_name)
 
-    st.markdown('</div>', unsafe_allow_html=True)
 
+# ─── Instruction Page ───
 if st.session_state.page == "instruction":
     st.subheader("一、標註規則")
     for i, rule in enumerate(ANNOTATION_RULES, start=1):
@@ -1220,17 +837,16 @@ if st.session_state.page == "instruction":
         render_definition_block(emo_name, emo_item)
 
     st.info("請先完整閱讀以上規則與定義，再開始標註。")
-
     start_disabled = (not annotator_name) or (len(st.session_state.videos) == 0)
-
     if len(st.session_state.videos) == 0:
         st.warning("目前找不到影片。請先把影片放進專案根目錄下的 videos/ 資料夾。")
-
     if st.button("我已閱讀完畢，開始標註", disabled=start_disabled):
         st.session_state.page = "annotation"
         reset_step_flow()
         st.rerun()
 
+
+# ─── Annotation Page ───
 else:
     if len(st.session_state.videos) == 0:
         st.error("沒有可標註的影片，請先把影片檔放到 videos/ 資料夾。")
@@ -1254,10 +870,8 @@ else:
     current_video = st.session_state.videos[st.session_state.current_index]
     current_video_name = get_video_name(current_video)
     saved_record = get_saved_record(annotator_name, current_video_name) if annotator_name else None
-    st.subheader(f"目前影片：{current_video_name}")
 
-    # [FIX] 每個步驟頂端都顯示跨標註者一致性面板
-    render_inter_annotator_panel(current_video_name)
+    st.subheader(f"目前影片：{current_video_name}")
 
     if saved_record and st.session_state.annotation_step == 1:
         st.info("這支影片你已經標過。你可以修改後重新儲存，系統會覆蓋舊資料。")
@@ -1266,149 +880,125 @@ else:
         reset_checkbox_widget_state(st.session_state.current_index)
         st.session_state["loaded_saved_record_video"] = current_video_name
 
-    if st.session_state.annotation_step == 1:
-        # [FIX] Step 1 頂端顯示目前累積一致性（此時無前步資料，但保持結構一致）
-        render_live_consistency_banner(1)
+    render_progress_banner()
 
-        default_core_values, default_core_unknown_groups = build_feature_saved_values(
+    # ═══════════════════════════════════════
+    # STEP 1+2：眼睛/耳朵 + 尾巴/四肢
+    # ═══════════════════════════════════════
+    if st.session_state.annotation_step == 1:
+        st.markdown("## Step 1：眼睛、耳朵（主要特徵）")
+
+        default_core_values, default_core_unknown = build_feature_saved_values(
             st.session_state.step1_selected_core,
             st.session_state.step1_unknown_core,
         )
-
         selected_core_all, unknown_core_groups = render_feature_checkbox_grid(
-            "## Step 1：先看眼睛、耳朵",
+            "",
             "core",
             ["眼睛", "耳朵"],
             FEATURE_CATALOG,
             default_core_values,
-            default_core_unknown_groups,
+            default_core_unknown,
             st.session_state.current_index,
         )
 
-        col_check, col_continue = st.columns(2)
+        st.divider()
+        st.markdown("## Step 2：尾巴、四肢（次要特徵）")
+
+        default_aux_values, default_aux_unknown = build_feature_saved_values(
+            st.session_state.step2_selected_aux,
+            st.session_state.step2_unknown_aux,
+        )
+        selected_aux_all, unknown_aux_groups = render_feature_checkbox_grid(
+            "",
+            "aux",
+            ["尾巴", "四肢"],
+            FEATURE_CATALOG,
+            default_aux_values,
+            default_aux_unknown,
+            st.session_state.current_index,
+        )
+
+        st.divider()
+        col_check, col_next = st.columns(2)
 
         with col_check:
-            if st.button("檢查標註", key=f"step1_check_{st.session_state.current_index}"):
+            if st.button("檢查 Step 1+2", key=f"step12_check_{st.session_state.current_index}"):
                 st.session_state.step1_selected_core = selected_core_all
                 st.session_state.step1_unknown_core = unknown_core_groups
-                st.session_state.step1_check_result = check_step1(selected_core_all, unknown_core_groups)
-                st.session_state.step1_confirmed = False
-                st.session_state["step1_confirmation_state"] = None
+                st.session_state.step2_selected_aux = selected_aux_all
+                st.session_state.step2_unknown_aux = unknown_aux_groups
+                st.session_state.step12_result = evaluate_step12(
+                    selected_core_all, unknown_core_groups,
+                    selected_aux_all, unknown_aux_groups,
+                )
+                st.session_state.step12_confirmed = False
                 st.rerun()
 
-        result = st.session_state.step1_check_result
+        result12 = st.session_state.step12_result
         can_continue = False
 
-        if result:
-            render_check_result_box("Step 1 檢查結果", result)
-            confirmation_state = st.session_state.get("step1_confirmation_state", None)
-
-            if result["needs_confirmation"] and confirmation_state is None:
-                render_confirmation_ui("step1", result)
-                can_continue = False
-            elif confirmation_state == "yes":
-                st.session_state.step1_confirmed = True
-                st.markdown('<div class="ok-box"><b>標註已確認無誤</b></div>', unsafe_allow_html=True)
+        if result12:
+            if result12["met"]:
+                st.markdown(
+                    f'<div class="ok-box"><b>{result12["summary"]}</b></div>',
+                    unsafe_allow_html=True,
+                )
                 can_continue = True
-            elif confirmation_state == "no":
-                st.session_state.step1_confirmed = False
-                st.info("請重新標註後，再按一次「檢查標註」。")
-                can_continue = False
             else:
-                can_continue = True
+                st.markdown(
+                    f'<div class="warn-box"><b>{result12["summary"]}</b><br>'
+                    f'Step 1+2 尚未達到情緒條件，Step3 將作為輔助判定。</div>',
+                    unsafe_allow_html=True,
+                )
+                can_continue = True  # 仍可繼續，進入輔助判定
 
-        with col_continue:
+        with col_next:
             if st.button(
-                "繼續標註",
-                key=f"step1_next_{st.session_state.current_index}",
+                "繼續 → Step 3",
+                key=f"step12_next_{st.session_state.current_index}",
                 disabled=not can_continue,
             ):
                 st.session_state.annotation_step = 2
                 st.rerun()
 
+    # ═══════════════════════════════════════
+    # STEP 3：行為（補充 或 輔助判定）
+    # ═══════════════════════════════════════
     elif st.session_state.annotation_step == 2:
-        # [FIX] Step 2 頂端顯示目前累積一致性（含 Step 1 結果）
-        render_live_consistency_banner(2)
+        step12_result = st.session_state.step12_result
 
-        default_aux_values, default_aux_unknown_groups = build_feature_saved_values(
-            st.session_state.step2_selected_aux,
-            st.session_state.step2_unknown_aux,
-        )
-
-        selected_aux_all, unknown_aux_groups = render_feature_checkbox_grid(
-            "## Step 2：看尾巴、四肢",
-            "aux",
-            ["尾巴", "四肢"],
-            FEATURE_CATALOG,
-            default_aux_values,
-            default_aux_unknown_groups,
-            st.session_state.current_index,
-        )
-
-        col_check, col_continue = st.columns(2)
-
-        with col_check:
-            if st.button("檢查標註", key=f"step2_check_{st.session_state.current_index}"):
-                st.session_state.step2_selected_aux = selected_aux_all
-                st.session_state.step2_unknown_aux = unknown_aux_groups
-                st.session_state.step2_check_result = check_step2(
-                    st.session_state.step1_check_result,
-                    selected_aux_all,
-                    unknown_aux_groups,
-                )
-                st.session_state.step2_confirmed = False
-                st.session_state["step2_confirmation_state"] = None
-                st.rerun()
-
-        result = st.session_state.step2_check_result
-        can_continue = False
-
-        if result:
-            render_check_result_box("Step 2 檢查結果", result)
-            confirmation_state = st.session_state.get("step2_confirmation_state", None)
-
-            if result["needs_confirmation"] and confirmation_state is None:
-                render_confirmation_ui("step2", result)
-                can_continue = False
-            elif confirmation_state == "yes":
-                st.session_state.step2_confirmed = True
-                st.markdown('<div class="ok-box"><b>標註已確認無誤</b></div>', unsafe_allow_html=True)
-                can_continue = True
-            elif confirmation_state == "no":
-                st.session_state.step2_confirmed = False
-                st.info("請重新標註後，再按一次「檢查標註」。")
-                can_continue = False
-            else:
-                can_continue = True
-
-        with col_continue:
-            if st.button(
-                "繼續標註",
-                key=f"step2_next_{st.session_state.current_index}",
-                disabled=not can_continue,
-            ):
-                st.session_state.annotation_step = 3
-                st.rerun()
-
-    elif st.session_state.annotation_step == 3:
-        # [FIX] Step 3 頂端顯示目前累積一致性（含 Step 1 + 2 結果）
-        render_live_consistency_banner(3)
-
-        st.markdown("## Step 3：看行為（單選）")
+        if step12_result and step12_result["met"]:
+            st.markdown(
+                f'<div class="ok-box" style="margin-bottom:12px;">'
+                f'暫定情緒：<b>{step12_result["emotion"]}</b> ｜ {step12_result["summary"]}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown("## Step 3：行為（補充）")
+            st.caption("Step 1+2 已達條件，行為特徵作為補充。若行為一致 → 高等信心；若不同 → 中等信心。")
+        else:
+            st.markdown(
+                '<div class="warn-box" style="margin-bottom:12px;">'
+                'Step 1+2 尚未達條件，行為特徵作為<b>輔助判定</b>。'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown("## Step 3：行為（輔助判定）")
+            st.caption("請選擇最能代表貓咪行為的特徵，作為輔助情緒條件判定。")
 
         behavior_options = group_features_for_display(FEATURE_CATALOG, "aux").get("行為", [])
-
         behavior_key = f"behavior_single_{st.session_state.current_index}"
         behavior_unknown_key = f"behavior_unknown_{st.session_state.current_index}"
 
         if behavior_key not in st.session_state:
-            if st.session_state.step3_selected_aux:
-                st.session_state[behavior_key] = st.session_state.step3_selected_aux[0]
+            if st.session_state.step3_selected_behavior:
+                st.session_state[behavior_key] = st.session_state.step3_selected_behavior[0]
             else:
                 st.session_state[behavior_key] = None
 
         if behavior_unknown_key not in st.session_state:
-            st.session_state[behavior_unknown_key] = "行為" in st.session_state.step3_unknown_aux
+            st.session_state[behavior_unknown_key] = st.session_state.step3_unknown_behavior
 
         col_u1, col_u2 = st.columns([8, 2])
         with col_u1:
@@ -1419,178 +1009,149 @@ else:
         if behavior_unknown:
             st.session_state[behavior_key] = None
             selected_behavior = []
-            unknown_aux_groups = ["行為"]
         else:
             selected_behavior_value = st.radio(
                 "請選擇一個最主要的行為特徵",
                 behavior_options,
-                index=behavior_options.index(st.session_state[behavior_key]) if st.session_state[behavior_key] in behavior_options else None,
+                index=behavior_options.index(st.session_state[behavior_key])
+                    if st.session_state[behavior_key] in behavior_options else None,
                 key=behavior_key,
             )
             selected_behavior = [selected_behavior_value] if selected_behavior_value else []
-            unknown_aux_groups = []
 
-        col_check, col_continue = st.columns(2)
+        st.divider()
+        col_check, col_next = st.columns(2)
 
         with col_check:
-            if st.button("檢查標註", key=f"step3_check_{st.session_state.current_index}"):
-                st.session_state.step3_selected_aux = selected_behavior
-                st.session_state.step3_unknown_aux = unknown_aux_groups
-                st.session_state.step3_check_result = check_step3(
-                    st.session_state.step1_check_result,
-                    st.session_state.step2_check_result,
-                    selected_behavior,
-                    unknown_aux_groups,
-                )
-                st.session_state.step3_confirmed = False
-                st.session_state["step3_confirmation_state"] = None
+            if st.button("檢查 Step 3", key=f"step3_check_{st.session_state.current_index}"):
+                st.session_state.step3_selected_behavior = selected_behavior
+                st.session_state.step3_unknown_behavior = behavior_unknown
+
+                if step12_result and step12_result["met"]:
+                    result3 = evaluate_step3_supplement(
+                        step12_result["emotion"],
+                        selected_behavior,
+                        behavior_unknown,
+                    )
+                    # 包裝成統一格式
+                    st.session_state.step3_result = {
+                        "mode": "supplement",
+                        "emotion": step12_result["emotion"],
+                        "behavior_emotion": result3["behavior_emotion"],
+                        "confidence": result3["confidence"],
+                        "summary": result3["summary"],
+                        "force_uncertain": False,
+                    }
+                else:
+                    result3 = evaluate_step3_auxiliary(
+                        step12_result or {},
+                        selected_behavior,
+                        behavior_unknown,
+                    )
+                    st.session_state.step3_result = {
+                        "mode": "auxiliary",
+                        "emotion": result3["emotion"],
+                        "behavior_emotion": result3["behavior_emotion"],
+                        "confidence": result3["confidence"],
+                        "summary": result3["summary"],
+                        "force_uncertain": not result3["met"],
+                    }
                 st.rerun()
 
-        result = st.session_state.step3_check_result
+        result3 = st.session_state.step3_result
         can_continue = False
 
-        if result:
-            render_check_result_box("Step 3 檢查結果", result)
-            if result.get("reason"):
-                st.caption(f"原因：{result['reason']}")
-
-            confirmation_state = st.session_state.get("step3_confirmation_state", None)
-
-            if result["needs_confirmation"] and confirmation_state is None:
-                render_confirmation_ui("step3", result)
-                can_continue = False
-            elif confirmation_state == "yes":
-                st.session_state.step3_confirmed = True
-                st.markdown('<div class="ok-box"><b>標註已確認無誤</b></div>', unsafe_allow_html=True)
-                can_continue = True
-            elif confirmation_state == "no":
-                st.session_state.step3_confirmed = False
-                st.info("請重新標註後，再按一次「檢查標註」。")
-                can_continue = False
+        if result3:
+            if result3.get("force_uncertain"):
+                st.markdown(
+                    f'<div class="low-box"><b>{result3["summary"]}</b></div>',
+                    unsafe_allow_html=True,
+                )
+            elif result3["confidence"] == "高等":
+                st.markdown(
+                    f'<div class="ok-box"><b>{result3["summary"]}</b></div>',
+                    unsafe_allow_html=True,
+                )
             else:
-                can_continue = True
+                st.markdown(
+                    f'<div class="warn-box"><b>{result3["summary"]}</b></div>',
+                    unsafe_allow_html=True,
+                )
+            can_continue = True
 
-        with col_continue:
+        with col_next:
             if st.button(
-                "繼續標註",
+                "繼續 → Step 4（最終確認）",
                 key=f"step3_next_{st.session_state.current_index}",
                 disabled=not can_continue,
             ):
-                st.session_state.annotation_step = 4
+                st.session_state.annotation_step = 3
                 st.rerun()
 
+    # ═══════════════════════════════════════
+    # STEP 4：最終情緒確認 + 儲存
+    # ═══════════════════════════════════════
     else:
-        step1_result = st.session_state.step1_check_result
-        step2_result = st.session_state.step2_check_result
-        step3_result = st.session_state.step3_check_result
-        default_note = saved_record.get("note", "") if saved_record else ""
+        step12_result = st.session_state.step12_result or {}
+        step3_result = st.session_state.step3_result or {}
 
-        core_cnt, sec_cnt, beh_cnt = count_step4_supports(step1_result, step2_result, step3_result)
-        overall_result = evaluate_step4_overall_result(step1_result, step2_result, step3_result)
-
-        # [FIX] Step 4 頂端顯示完整累積一致性（含全部三步）
-        render_live_consistency_banner(4)
+        force_uncertain = step3_result.get("force_uncertain", False)
+        final_emotion_suggestion = step3_result.get("emotion") or step12_result.get("emotion")
+        confidence = step3_result.get("confidence", "低等")
 
         st.markdown("## Step 4：最終情緒確認")
-        if step1_result:
-            st.markdown(f"- Step 1：{step1_result['summary']}")
-        if step2_result:
-            st.markdown(f"- Step 2：{step2_result['summary']}")
-        if step3_result:
-            st.markdown(f"- Step 3：{step3_result['summary']}")
 
-        if overall_result["mode"] == "single":
-            st.markdown(f"- 目前一致核心支持數：{core_cnt}")
-            st.markdown(f"- 目前一致次要支持數：{sec_cnt}")
-            st.markdown(f"- 目前輔助（行為）支持數：{beh_cnt}")
-        elif overall_result["mode"] == "multiple":
-            st.markdown("- 目前狀態：多種情緒")
-        else:
-            st.markdown("- 目前狀態：未達最低特徵條件")
+        # 摘要
+        st.markdown(f"- **Step 1+2 結果：** {step12_result.get('summary', '—')}")
+        st.markdown(f"- **Step 3 結果：** {step3_result.get('summary', '—')}")
 
-        step4_check_key = f"step4_check_result_{st.session_state.current_index}"
-        if step4_check_key not in st.session_state:
-            st.session_state[step4_check_key] = None
-
-        force_uncertain_key = f"force_uncertain_{st.session_state.current_index}"
-        if force_uncertain_key not in st.session_state:
-            st.session_state[force_uncertain_key] = overall_result["force_uncertain"]
-
-        if overall_result["force_uncertain"]:
-            st.session_state[force_uncertain_key] = True
+        if force_uncertain:
             st.markdown(
-                """
-                <div class="low-box">
-                    <b>多種情緒</b><br>
-                    已出現兩種以上情緒，最終只能選 uncertain
-                </div>
-                """,
+                f'<div class="low-box">'
+                f'<b>信心程度：低等</b><br>'
+                f'特徵未達情緒條件，最終情緒只能選 <b>uncertain</b>。'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        elif confidence == "高等":
+            st.markdown(
+                f'<div class="ok-box">'
+                f'<b>信心程度：高等</b><br>'
+                f'建議情緒：<b>{final_emotion_suggestion}</b>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f'<div class="warn-box">'
+                f'<b>信心程度：中等</b><br>'
+                f'建議情緒：<b>{final_emotion_suggestion}</b>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
-        force_uncertain = st.session_state[force_uncertain_key]
-
+        # 情緒選擇
         if force_uncertain:
             selected_final = st.radio(
                 "請選擇最終主導情緒",
                 ["uncertain"],
                 index=0,
-                key=f"main_emotion_force_{st.session_state.current_index}",
+                key=f"final_emotion_force_{st.session_state.current_index}",
             )
         else:
+            default_idx = (
+                MAIN_EMOTIONS.index(final_emotion_suggestion)
+                if final_emotion_suggestion in MAIN_EMOTIONS
+                else None
+            )
             selected_final = st.radio(
                 "請選擇最終主導情緒",
                 MAIN_EMOTIONS,
-                index=None,
-                key=f"main_emotion_radio_{st.session_state.current_index}",
+                index=default_idx,
+                key=f"final_emotion_radio_{st.session_state.current_index}",
             )
 
-        col_check, col_save = st.columns(2)
-
-        with col_check:
-            if st.button("檢查標註", key=f"step4_check_{st.session_state.current_index}"):
-                if selected_final is None:
-                    st.session_state[step4_check_key] = {
-                        "is_consistent": False,
-                        "message": "尚未選擇最終情緒",
-                        "confidence": "",
-                    }
-                else:
-                    st.session_state[step4_check_key] = evaluate_final_label_consistency(
-                        selected_final,
-                        step1_result,
-                        step2_result,
-                        step3_result,
-                    )
-                st.rerun()
-
-        step4_check_result = st.session_state[step4_check_key]
-
-        if step4_check_result:
-            if step4_check_result["message"] == "尚未選擇最終情緒":
-                st.warning("尚未選擇最終情緒")
-            elif step4_check_result["is_consistent"]:
-                box_class = "ok-box" if step4_check_result["confidence"] == "高信心" else "low-box"
-                st.markdown(
-                    f"""
-                    <div class="{box_class}">
-                        <b>{step4_check_result['message']}</b><br>
-                        <b>{step4_check_result['confidence']}</b>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f"""
-                    <div class="low-box">
-                        <b>{step4_check_result['message']}</b><br>
-                        <b>{step4_check_result['confidence']}</b>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
+        default_note = saved_record.get("note", "") if saved_record else ""
         note = st.text_area(
             "備註",
             value=default_note,
@@ -1598,79 +1159,94 @@ else:
             key=f"note_{st.session_state.current_index}",
         )
 
-        with col_save:
-            save_clicked = st.button("儲存本筆標註", key=f"save_step4_{st.session_state.current_index}")
+        st.divider()
 
-        if save_clicked:
+        col_save, col_sync = st.columns(2)
+
+        # ─── 儲存到本地 ───
+        with col_save:
+            save_local = st.button(
+                "💾 儲存到本地",
+                key=f"save_local_{st.session_state.current_index}",
+            )
+
+        # ─── 儲存並同步 Google Sheet ───
+        with col_sync:
+            save_sync = st.button(
+                "☁️ 儲存並同步 Google Sheet",
+                key=f"save_sync_{st.session_state.current_index}",
+            )
+
+        def build_record():
             if not annotator_name:
                 st.error("請先在左側輸入標註者姓名或編號。")
-                st.stop()
-
+                return None
             if selected_final is None:
                 st.error("請先選擇最終主導情緒。")
-                st.stop()
-
-            # ─────────────────────────────────────────────
-            # [FIX] 儲存前強制做一致性檢查，不一致則阻擋儲存
-            # ─────────────────────────────────────────────
-            final_consistency = evaluate_final_label_consistency(
-                selected_final, step1_result, step2_result, step3_result
-            )
-            if not final_consistency["is_consistent"]:
-                st.error(
-                    f"⚠️ 標註不一致，無法儲存！\n\n"
-                    f"原因：{final_consistency['message']}\n\n"
-                    f"請先按「檢查標註」確認特徵與最終情緒一致，或重新選擇情緒後再儲存。"
-                )
-                st.stop()
+                return None
 
             eye_selected = get_group_selected_features(st.session_state.step1_selected_core, "core", "眼睛")
             ear_selected = get_group_selected_features(st.session_state.step1_selected_core, "core", "耳朵")
             tail_selected = get_group_selected_features(st.session_state.step2_selected_aux, "aux", "尾巴")
             limb_selected = get_group_selected_features(st.session_state.step2_selected_aux, "aux", "四肢")
 
-            # ─────────────────────────────────────────────
-            # [FIX] record_id 改用 hash(annotator::video)
-            # ─────────────────────────────────────────────
-            record = {
+            return {
                 "record_id": compute_record_id(annotator_name.strip(), current_video_name),
                 "video_file": current_video_name,
                 "eye_selected": json.dumps(eye_selected, ensure_ascii=False),
                 "ear_selected": json.dumps(ear_selected, ensure_ascii=False),
                 "tail_selected": json.dumps(tail_selected, ensure_ascii=False),
                 "limb_selected": json.dumps(limb_selected, ensure_ascii=False),
+                "behavior_selected": json.dumps(st.session_state.step3_selected_behavior, ensure_ascii=False),
                 "final_emotion": selected_final,
-                "confidence": final_consistency["confidence"],
-                "is_multi_emotion": "是" if evaluate_step4_overall_result(step1_result, step2_result, step3_result)["mode"] == "multiple" else "否",
+                "confidence": confidence,
+                "step12_condition": step12_result.get("matched_condition", "none"),
+                "step12_summary": step12_result.get("summary", ""),
+                "step3_mode": step3_result.get("mode", ""),
+                "step3_summary": step3_result.get("summary", ""),
                 "step1_selected_core_all": json.dumps(st.session_state.step1_selected_core, ensure_ascii=False),
                 "step1_unknown_core_groups": json.dumps(st.session_state.step1_unknown_core, ensure_ascii=False),
                 "step2_selected_aux_all": json.dumps(st.session_state.step2_selected_aux, ensure_ascii=False),
                 "step2_unknown_aux_groups": json.dumps(st.session_state.step2_unknown_aux, ensure_ascii=False),
-                "step3_selected_aux_all": json.dumps(st.session_state.step3_selected_aux, ensure_ascii=False),
-                "step3_unknown_aux_groups": json.dumps(st.session_state.step3_unknown_aux, ensure_ascii=False),
+                "step3_unknown_behavior": str(st.session_state.step3_unknown_behavior),
                 "note": note,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
-            upsert_annotation(record, annotator_name)
 
-            try:
-                append_to_google_sheet(record, annotator_name)
-                st.success("已儲存本筆標註，並同步到 Google Sheet。")
-            except Exception as e:
-                st.warning(f"本地已儲存，但同步 Google Sheet 失敗：{e}")
+        if save_local:
+            record = build_record()
+            if record:
+                upsert_annotation(record, annotator_name)
+                st.session_state.completed = len(load_existing_annotations(annotator_name))
+                st.success(
+                    f"✅ 已儲存到本地！\n\n"
+                    f"檔案位置：`annotations/annotations_{annotator_name.strip()}.csv`"
+                )
 
-            st.session_state.completed = len(load_existing_annotations(annotator_name))
+        if save_sync:
+            record = build_record()
+            if record:
+                upsert_annotation(record, annotator_name)
+                st.session_state.completed = len(load_existing_annotations(annotator_name))
+                try:
+                    append_to_google_sheet(record, annotator_name)
+                    st.success("✅ 已儲存到本地，並同步到 Google Sheet。")
+                except Exception as e:
+                    st.warning(f"本地已儲存，但同步 Google Sheet 失敗：{e}")
 
+    # ─── 下方導覽 ───
     st.divider()
     col1, col2 = st.columns(2)
-
     with col1:
         if st.button("上一段", disabled=st.session_state.current_index == 0):
             st.session_state.current_index -= 1
             reset_step_flow()
             st.rerun()
-
     with col2:
-        if st.button("下一段", disabled=st.session_state.current_index >= len(st.session_state.videos) - 1):
+        if st.button(
+            "下一段",
+            disabled=st.session_state.current_index >= len(st.session_state.videos) - 1,
+        ):
             st.session_state.current_index += 1
             reset_step_flow()
             st.rerun()
