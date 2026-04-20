@@ -4,7 +4,6 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 import requests
-import io
 
 import pandas as pd
 import streamlit as st
@@ -233,21 +232,6 @@ def show_emotion_dialog(emotion_name: str):
             st.markdown(f"- {opt}")
 
 
-@st.dialog("⚠️ 標註確認")
-def show_inconsistency_dialog(message: str, on_confirm_key: str):
-    st.warning(message)
-    st.markdown("**請確認你的標註是否正確？**")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✅ 是，確認標註無誤", use_container_width=True):
-            st.session_state[on_confirm_key] = "confirmed"
-            st.rerun()
-    with col2:
-        if st.button("❌ 否，重新標註", use_container_width=True):
-            st.session_state[on_confirm_key] = "redo"
-            st.rerun()
-
-
 SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzA_0AnSkFSeN6GFLr1wDsvx-l28-5a3s605l9CV6QwwTfcJ4GejNepx2yOIjX7M85m/exec"
 SHEET_SECRET = "my_cat_annotation_secret"
 
@@ -314,19 +298,6 @@ def get_saved_record(annotator_name: str, video_name: str):
     if matched.empty:
         return None
     return matched.iloc[-1].to_dict()
-
-
-def parse_json_list(value):
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    if isinstance(value, float) and pd.isna(value):
-        return []
-    try:
-        return json.loads(value)
-    except Exception:
-        return []
 
 
 def build_neutral_feature_catalog(schema: dict):
@@ -444,18 +415,7 @@ def render_feature_checkbox_grid(
     return selected, unknown_groups
 
 
-# ─────────────────────────────────────────────
-# 部位情緒推斷：回傳一個部位中「所有」有票情緒及其票數
-# ─────────────────────────────────────────────
 def infer_group_emotion(selected_features, unknown_groups, feature_type, group_name):
-    """
-    回傳：
-    {
-        "status": "unknown" | "emotion" | "conflict",
-        "emotion": str | None,        # 單一情緒（無衝突時）
-        "all_emotions": {emo: count}  # 所有有票情緒
-    }
-    """
     if group_name in unknown_groups:
         return {"status": "unknown", "emotion": None, "all_emotions": {}}
 
@@ -486,14 +446,6 @@ def get_group_selected_features(selected_features, feature_type, group_name):
     ]
 
 
-# ─────────────────────────────────────────────
-# Step1+2 合併判定（含多情緒衝突偵測）
-#
-# 條件一：2 個主要特徵（眼 + 耳）指向同一情緒
-# 條件二：1 個主要特徵 + 1 個次要特徵（尾或肢）指向同一情緒
-#
-# 例外：若有 ≥2 種不同情緒同時都達到條件 → 多情緒衝突 → uncertain 低等
-# ─────────────────────────────────────────────
 def evaluate_step12(
     selected_core_all, unknown_core_groups,
     selected_aux_all, unknown_aux_groups
@@ -503,7 +455,6 @@ def evaluate_step12(
     tail = infer_group_emotion(selected_aux_all, unknown_aux_groups, "aux", "尾巴")
     limb = infer_group_emotion(selected_aux_all, unknown_aux_groups, "aux", "四肢")
 
-    # 統計每個情緒在主要特徵（眼、耳）的得票數
     core_candidates = defaultdict(int)
     if eye["status"] == "emotion":
         core_candidates[eye["emotion"]] += 1
@@ -511,7 +462,6 @@ def evaluate_step12(
         core_candidates[ear["emotion"]] += 1
     core_candidates = dict(core_candidates)
 
-    # 統計每個情緒在次要特徵（尾、肢）的得票數
     secondary_supports = defaultdict(int)
     if tail["status"] == "emotion":
         secondary_supports[tail["emotion"]] += 1
@@ -519,10 +469,7 @@ def evaluate_step12(
         secondary_supports[limb["emotion"]] += 1
     secondary_supports = dict(secondary_supports)
 
-    # 找出所有達到「條件一」的情緒（眼+耳都指向同一情緒，得票 >=2）
     cond1_emotions = [emo for emo, cnt in core_candidates.items() if cnt >= 2]
-
-    # 找出所有達到「條件二」的情緒（1個主要 + 1個次要，且指向同一情緒）
     cond2_emotions = [
         emo for emo, core_cnt in core_candidates.items()
         if core_cnt >= 1 and secondary_supports.get(emo, 0) >= 1
@@ -530,7 +477,6 @@ def evaluate_step12(
 
     all_met_emotions = list(set(cond1_emotions + cond2_emotions))
 
-    # 例外：多情緒衝突（≥2 種不同情緒都達條件）
     if len(all_met_emotions) >= 2:
         return {
             "met": True,
@@ -543,7 +489,6 @@ def evaluate_step12(
             "summary": f"⚠️ 多情緒衝突：{', '.join(all_met_emotions)} 同時達到條件 → 強制 uncertain（低等）",
         }
 
-    # 條件一達成（單一情緒）
     if cond1_emotions:
         emo = cond1_emotions[0]
         return {
@@ -554,10 +499,9 @@ def evaluate_step12(
             "core_candidates": core_candidates,
             "secondary_supports": secondary_supports,
             "matched_condition": "cond1",
-            "summary": f"✅ 條件一達成：2 個主要特徵（眼+耳）一致 ",
+            "summary": "✅ 條件一達成：2 個主要特徵（眼+耳）一致",
         }
 
-    # 條件二達成（單一情緒）
     if cond2_emotions:
         emo = cond2_emotions[0]
         return {
@@ -568,10 +512,9 @@ def evaluate_step12(
             "core_candidates": core_candidates,
             "secondary_supports": secondary_supports,
             "matched_condition": "cond2",
-            "summary": f"✅ 條件二達成：1 個主要特徵 + 1 個次要特徵一致 ",
+            "summary": "✅ 條件二達成：1 個主要特徵 + 1 個次要特徵一致",
         }
 
-    # 未達任何條件
     return {
         "met": False,
         "emotion": None,
@@ -584,12 +527,6 @@ def evaluate_step12(
     }
 
 
-# ─────────────────────────────────────────────
-# Step3 輔助判定（Step1+2 未達條件時）
-# 條件三：1 個主要特徵 + 行為一致
-# 條件四：1 個次要特徵 + 行為一致
-# 例外：多情緒同時達條件 → uncertain 低等
-# ─────────────────────────────────────────────
 def evaluate_step3_auxiliary(step12_result, selected_behavior, unknown_behavior):
     if unknown_behavior or not selected_behavior:
         return {
@@ -622,13 +559,10 @@ def evaluate_step3_auxiliary(step12_result, selected_behavior, unknown_behavior)
     core_candidates = step12_result.get("core_candidates", {})
     secondary_supports = step12_result.get("secondary_supports", {})
 
-    # 找出所有達條件三（1主要+行為一致）的情緒
     cond3_emotions = [
         emo for emo, cnt in core_candidates.items()
         if cnt >= 1 and behavior_emotion == emo
     ]
-
-    # 找出所有達條件四（1次要+行為一致）的情緒
     cond4_emotions = [
         emo for emo, cnt in secondary_supports.items()
         if cnt >= 1 and behavior_emotion == emo
@@ -636,7 +570,6 @@ def evaluate_step3_auxiliary(step12_result, selected_behavior, unknown_behavior)
 
     all_met_step3 = list(set(cond3_emotions + cond4_emotions))
 
-    # 多情緒衝突（在 Step3 幾乎不會發生，但做安全處理）
     if len(all_met_step3) >= 2:
         return {
             "met": True,
@@ -659,7 +592,7 @@ def evaluate_step3_auxiliary(step12_result, selected_behavior, unknown_behavior)
             "multi_emotion_conflict": False,
             "conflicting_emotions": [],
             "confidence": "中等",
-            "summary": f"✅ 條件三達成：1 個主要特徵 + 行為一致 → 信心中等",
+            "summary": "✅ 條件三達成：1 個主要特徵 + 行為一致 → 信心中等",
         }
 
     if cond4_emotions:
@@ -672,7 +605,7 @@ def evaluate_step3_auxiliary(step12_result, selected_behavior, unknown_behavior)
             "multi_emotion_conflict": False,
             "conflicting_emotions": [],
             "confidence": "中等",
-            "summary": f"✅ 條件四達成：1 個次要特徵 + 行為一致 → 信心中等",
+            "summary": "✅ 條件四達成：1 個次要特徵 + 行為一致 → 信心中等",
         }
 
     return {
@@ -687,9 +620,6 @@ def evaluate_step3_auxiliary(step12_result, selected_behavior, unknown_behavior)
     }
 
 
-# ─────────────────────────────────────────────
-# Step3 補充判定（Step1+2 已達條件時）
-# ─────────────────────────────────────────────
 def evaluate_step3_supplement(step12_emotion, selected_behavior, unknown_behavior):
     if unknown_behavior or not selected_behavior:
         return {
@@ -755,8 +685,7 @@ def init_session(videos):
         "step3_unknown_behavior": False,
         "step3_result": None,
         "loaded_saved_record_video": None,
-        # 不一致確認狀態
-        "inconsistency_confirm": None,   # None | "confirmed" | "redo"
+        "inconsistency_confirm": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -772,6 +701,51 @@ def reset_checkbox_widget_state(video_index: int):
     ]
     for k in keys_to_delete:
         del st.session_state[k]
+
+
+def clear_step4_state(video_index: int):
+    for key in [
+        f"final_emotion_radio_{video_index}",
+        f"final_emotion_force_{video_index}",
+        f"inconsistency_confirm_{video_index}",
+    ]:
+        if key in st.session_state:
+            del st.session_state[key]
+
+
+def clear_step3_state(video_index: int):
+    for key in [
+        f"behavior_single_{video_index}",
+        f"behavior_unknown_{video_index}",
+        f"step3_check_done_{video_index}",
+    ]:
+        if key in st.session_state:
+            del st.session_state[key]
+
+
+def go_to_instruction():
+    st.session_state.page = "instruction"
+    reset_step_flow()
+    st.rerun()
+
+
+def go_to_step1():
+    st.session_state.annotation_step = 1
+    st.session_state.step12_result = None
+    st.session_state.step12_confirmed = False
+    st.session_state.step3_selected_behavior = []
+    st.session_state.step3_unknown_behavior = False
+    st.session_state.step3_result = None
+    clear_step3_state(st.session_state.current_index)
+    clear_step4_state(st.session_state.current_index)
+    st.rerun()
+
+
+def go_to_step2():
+    st.session_state.annotation_step = 2
+    st.session_state.step3_result = None
+    clear_step4_state(st.session_state.current_index)
+    st.rerun()
 
 
 def reset_step_flow():
@@ -803,23 +777,16 @@ def reset_step_flow():
             del st.session_state[key]
 
 
-# ─────────────────────────────────────────────
-# 暫定情緒取得（供 Step4 顯示及一致性檢查）
-# ─────────────────────────────────────────────
 def get_suggested_emotion():
-    """從 step3_result 或 step12_result 取得系統建議情緒"""
     step3 = st.session_state.get("step3_result") or {}
     step12 = st.session_state.get("step12_result") or {}
 
-    # 多情緒衝突（任何步驟）→ uncertain
     if step12.get("multi_emotion_conflict") or step3.get("multi_emotion_conflict"):
         return "uncertain"
 
-    # Step3 輔助模式且有達條件
     if step3.get("mode") == "auxiliary" and step3.get("emotion"):
         return step3["emotion"]
 
-    # Step12 有暫定情緒
     if step12.get("emotion"):
         return step12["emotion"]
 
@@ -827,7 +794,6 @@ def get_suggested_emotion():
 
 
 def is_force_uncertain():
-    """是否強制只能選 uncertain"""
     step3 = st.session_state.get("step3_result") or {}
     step12 = st.session_state.get("step12_result") or {}
     if step12.get("multi_emotion_conflict"):
@@ -839,13 +805,8 @@ def is_force_uncertain():
     return False
 
 
-# ─────────────────────────────────────────────
-# 頂端進度橫幅
-# ─────────────────────────────────────────────
 def render_progress_banner():
     step = st.session_state.annotation_step
-    step12 = st.session_state.step12_result
-
     labels = ["Step 1+2：眼耳 / 尾肢", "Step 3：行為", "Step 4：最終確認"]
     step_map = {1: 0, 2: 1, 3: 2}
     current_label_idx = step_map.get(step, 2)
@@ -860,34 +821,15 @@ def render_progress_banner():
             else:
                 st.markdown(f"⬜ {label}")
 
-    if step12:
-        if step12.get("multi_emotion_conflict"):
-            box_class = "conflict-box"
-            msg = step12["summary"]
-        elif step12["met"]:
-            box_class = "ok-box"
-            msg = f"暫定情緒：<b>{step12['emotion']}</b> ｜ {step12['summary']}"
-        else:
-            box_class = "warn-box"
-            msg = step12["summary"]
-        st.markdown(
-            f'<div class="{box_class}" style="margin-top:8px;">{msg}</div>',
-            unsafe_allow_html=True,
-        )
-
     st.divider()
 
 
-# ─────────────────────────────────────────────
-# 主程式
-# ─────────────────────────────────────────────
 st.title(APP_TITLE)
 st.caption("流程：Step 1+2（眼耳/尾肢）→ Step 3（行為）→ Step 4（最終確認）")
 
 videos = load_video_files()
 init_session(videos)
 
-# ─── Sidebar ───
 with st.sidebar:
     st.header("標註進度")
     st.write(f"目前影片數：{len(st.session_state.videos)}")
@@ -901,11 +843,7 @@ with st.sidebar:
     st.session_state["annotator_name"] = annotator_name
 
     if st.button("回到說明頁"):
-        st.session_state.page = "instruction"
-        reset_step_flow()
-        st.rerun()
-
-    
+        go_to_instruction()
 
     if (
         st.session_state.page == "annotation"
@@ -939,7 +877,6 @@ with st.sidebar:
                 show_emotion_dialog(emotion_name)
 
 
-# ─── Instruction Page ───
 if st.session_state.page == "instruction":
     st.subheader("一、標註規則")
     for i, rule in enumerate(ANNOTATION_RULES, start=1):
@@ -958,8 +895,6 @@ if st.session_state.page == "instruction":
         reset_step_flow()
         st.rerun()
 
-
-# ─── Annotation Page ───
 else:
     if len(st.session_state.videos) == 0:
         st.error("沒有可標註的影片，請先把影片檔放到 videos/ 資料夾。")
@@ -995,9 +930,6 @@ else:
 
     render_progress_banner()
 
-    # ═══════════════════════════════════════
-    # STEP 1+2：眼睛/耳朵 + 尾巴/四肢
-    # ═══════════════════════════════════════
     if st.session_state.annotation_step == 1:
         st.markdown("## Step 1：眼睛、耳朵（主要特徵）")
 
@@ -1034,10 +966,11 @@ else:
 
         st.divider()
 
-        # ── 說明框：目前各部位推斷結果（輔助標註者理解） ──
-        
+        col_back, col_check, col_next = st.columns(3)
 
-        col_check, col_next = st.columns(2)
+        with col_back:
+            if st.button("返回說明頁", key=f"step12_back_{st.session_state.current_index}"):
+                go_to_instruction()
 
         with col_check:
             if st.button("檢查 Step 1+2", key=f"step12_check_{st.session_state.current_index}"):
@@ -1086,9 +1019,6 @@ else:
                 st.session_state.annotation_step = 2
                 st.rerun()
 
-    # ═══════════════════════════════════════
-    # STEP 3：行為（補充 或 輔助判定）
-    # ═══════════════════════════════════════
     elif st.session_state.annotation_step == 2:
         step12_result = st.session_state.step12_result
 
@@ -1146,20 +1076,23 @@ else:
                 "請選擇一個最主要的行為特徵",
                 behavior_options,
                 index=behavior_options.index(st.session_state[behavior_key])
-                    if st.session_state[behavior_key] in behavior_options else None,
+                if st.session_state[behavior_key] in behavior_options else None,
                 key=behavior_key,
             )
             selected_behavior = [selected_behavior_value] if selected_behavior_value else []
 
         st.divider()
-        col_check, col_next = st.columns(2)
+        col_back, col_check, col_next = st.columns(3)
+
+        with col_back:
+            if st.button("返回上一步", key=f"step3_back_{st.session_state.current_index}"):
+                go_to_step1()
 
         with col_check:
             if st.button("檢查 Step 3", key=f"step3_check_{st.session_state.current_index}"):
                 st.session_state.step3_selected_behavior = selected_behavior
                 st.session_state.step3_unknown_behavior = behavior_unknown
 
-                # 多情緒衝突：直接標為 uncertain 低等（不進入補充/輔助判定邏輯）
                 if step12_result and step12_result.get("multi_emotion_conflict"):
                     beh_info = FEATURE_LOOKUP["aux"].get(selected_behavior[0]) if selected_behavior else None
                     behavior_emotion = beh_info["emotion"] if beh_info else None
@@ -1170,7 +1103,7 @@ else:
                         "confidence": "低等",
                         "multi_emotion_conflict": True,
                         "conflicting_emotions": step12_result.get("conflicting_emotions", []),
-                        "summary": f"⚠️ 多情緒衝突，強制 uncertain（低等）",
+                        "summary": "⚠️ 多情緒衝突，強制 uncertain（低等）",
                         "force_uncertain": True,
                     }
                 elif step12_result and step12_result["met"]:
@@ -1238,9 +1171,6 @@ else:
                 st.session_state["inconsistency_confirm"] = None
                 st.rerun()
 
-    # ═══════════════════════════════════════
-    # STEP 4：最終情緒確認 + 儲存
-    # ═══════════════════════════════════════
     else:
         step12_result = st.session_state.step12_result or {}
         step3_result = st.session_state.step3_result or {}
@@ -1249,19 +1179,13 @@ else:
         suggested_emotion = get_suggested_emotion()
         confidence = step3_result.get("confidence", "低等")
 
-        # 暫定情緒（用於一致性顯示）
-        step12_provisional = step12_result.get("emotion")  # Step1+2 暫定
-        step3_provisional = step3_result.get("emotion")    # Step3 暫定（輔助模式）或補充後情緒
+        step12_provisional = step12_result.get("emotion")
+        step3_provisional = step3_result.get("emotion")
 
         st.markdown("## Step 4：最終情緒確認")
-
-        # ─── 摘要框 ───
-        
         st.markdown(f"- **Step 1+2 結果：** {step12_result.get('summary', '—')}")
-       
         st.markdown(f"- **Step 3 結果：** {step3_result.get('summary', '—')}")
 
-        # 多情緒衝突顯示
         if step12_result.get("multi_emotion_conflict") or step3_result.get("multi_emotion_conflict"):
             conflict_emos = step12_result.get("conflicting_emotions") or step3_result.get("conflicting_emotions", [])
             st.markdown(
@@ -1294,29 +1218,26 @@ else:
                 unsafe_allow_html=True,
             )
 
-        # ─── 情緒選擇 ───
         if force_uncertain:
             selected_final = st.radio(
-            "請選擇最終主導情緒",
-            ["uncertain"],
-        index=0,
-        key=f"final_emotion_force_{st.session_state.current_index}",
-        )
+                "請選擇最終主導情緒",
+                ["uncertain"],
+                index=0,
+                key=f"final_emotion_force_{st.session_state.current_index}",
+            )
         else:
             selected_final = st.radio(
                 "請選擇最終主導情緒",
-        MAIN_EMOTIONS,
-        index=None,
-        key=f"final_emotion_radio_{st.session_state.current_index}",
-        )
+                MAIN_EMOTIONS,
+                index=None,
+                key=f"final_emotion_radio_{st.session_state.current_index}",
+            )
 
-        # ─── 一致性檢查：最終選擇 vs 暫定情緒 ───
         inconsistency_msg = None
         if selected_final and not force_uncertain:
             if suggested_emotion and selected_final != suggested_emotion:
                 inconsistency_msg = (
-                    f"你選擇的最終情緒「{selected_final}」"
-                    f"與前述標註不一致**。"
+                    f"你選擇的最終情緒「{selected_final}」與前述標註不一致。"
                 )
 
         if inconsistency_msg:
@@ -1335,9 +1256,11 @@ else:
 
         st.divider()
 
-        # ─────────────────────────────────────────────
-        # 建立 record 的函式
-        # ─────────────────────────────────────────────
+        col_back_top, _ = st.columns([1, 3])
+        with col_back_top:
+            if st.button("返回上一步", key=f"step4_back_{st.session_state.current_index}"):
+                go_to_step2()
+
         def build_record(final_emotion: str):
             if not annotator_name:
                 st.error("請先在左側輸入標註者姓名或編號。")
@@ -1351,7 +1274,6 @@ else:
             tail_selected = get_group_selected_features(st.session_state.step2_selected_aux, "aux", "尾巴")
             limb_selected = get_group_selected_features(st.session_state.step2_selected_aux, "aux", "四肢")
 
-            # 多情緒衝突時記錄所有符合的情緒
             conflicting = (
                 step12_result.get("conflicting_emotions")
                 or step3_result.get("conflicting_emotions")
@@ -1366,23 +1288,18 @@ else:
                 "tail_selected": json.dumps(tail_selected, ensure_ascii=False),
                 "limb_selected": json.dumps(limb_selected, ensure_ascii=False),
                 "behavior_selected": json.dumps(st.session_state.step3_selected_behavior, ensure_ascii=False),
-                # 暫定情緒（Step1+2、Step3）
                 "step12_provisional_emotion": step12_provisional or "",
                 "step3_provisional_emotion": step3_provisional or "",
                 "suggested_emotion": suggested_emotion or "",
-                # 最終
                 "final_emotion": final_emotion,
                 "final_matches_suggested": str(final_emotion == (suggested_emotion or "")),
-                # 多情緒衝突記錄
                 "multi_emotion_conflict": str(bool(conflicting)),
                 "conflicting_emotions": json.dumps(conflicting, ensure_ascii=False),
-                # 信心與條件
                 "confidence": confidence,
                 "step12_condition": step12_result.get("matched_condition", "none"),
                 "step12_summary": step12_result.get("summary", ""),
                 "step3_mode": step3_result.get("mode", ""),
                 "step3_summary": step3_result.get("summary", ""),
-                # 原始勾選
                 "step1_selected_core_all": json.dumps(st.session_state.step1_selected_core, ensure_ascii=False),
                 "step1_unknown_core_groups": json.dumps(st.session_state.step1_unknown_core, ensure_ascii=False),
                 "step2_selected_aux_all": json.dumps(st.session_state.step2_selected_aux, ensure_ascii=False),
@@ -1392,46 +1309,10 @@ else:
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
 
-        # ─────────────────────────────────────────────
-        # 不一致確認狀態機
-        # ─────────────────────────────────────────────
         confirm_key = f"inconsistency_confirm_{st.session_state.current_index}"
         if confirm_key not in st.session_state:
-            st.session_state[confirm_key] = None  # None | "confirmed" | "redo"
+            st.session_state[confirm_key] = None
 
-        def handle_save(do_sync: bool):
-            """處理儲存邏輯（含不一致確認）"""
-            # 如果有不一致且尚未確認
-            if inconsistency_msg and st.session_state[confirm_key] != "confirmed":
-                st.session_state[confirm_key] = "pending"
-                st.rerun()
-                return
-
-            # 確認通過，執行儲存
-            record = build_record(selected_final)
-            if record:
-                upsert_annotation(record, annotator_name)
-                st.session_state.completed = len(load_existing_annotations(annotator_name))
-                if do_sync:
-                    try:
-                        append_to_google_sheet(record, annotator_name)
-                        st.success("✅ 已儲存到本地，並同步到 Google Sheet。")
-                    except Exception as e:
-                        st.warning(f"本地已儲存，但同步 Google Sheet 失敗：{e}")
-                else:
-                    # 直接提供下載
-                    df_mine = load_existing_annotations(annotator_name)
-                    csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                    st.success("✅ 已儲存！點下方按鈕下載 CSV。")
-                    st.download_button(
-                        label="⬇️ 下載我的標註 CSV",
-                        data=csv_bytes,
-                        file_name=f"annotations_{annotator_name.strip()}.csv",
-                        mime="text/csv",
-                    )
-                st.session_state[confirm_key] = None
-
-        # ─── 顯示不一致確認對話框 ───
         if st.session_state.get(confirm_key) == "pending":
             st.markdown("---")
             st.markdown(
@@ -1452,31 +1333,23 @@ else:
                 if st.button("❌ 否，重新標註", use_container_width=True,
                              key=f"confirm_no_{st.session_state.current_index}"):
                     st.session_state[confirm_key] = None
-                    reset_step_flow()
-                    st.rerun()
-
-        elif st.session_state.get(confirm_key) == "redo":
-            st.session_state[confirm_key] = None
-            reset_step_flow()
-            st.rerun()
+                    go_to_step1()
 
         else:
             col_save, col_sync = st.columns(2)
 
             with col_save:
-                # ─── 下載自己的 CSV（只含自己的標註）───
                 if annotator_name:
-                        df_mine = load_existing_annotations(annotator_name)
-                        if not df_mine.empty:
-                            csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                            st.download_button(
-                                label="⬇️ 下載我的標註 CSV",
-                                data=csv_bytes,
-                                file_name=f"annotations_{annotator_name.strip()}.csv",
-                                mime="text/csv",
-                                help="只包含你自己的標註資料",
-                            )
-            
+                    df_mine = load_existing_annotations(annotator_name)
+                    if not df_mine.empty:
+                        csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+                        st.download_button(
+                            label="⬇️ 下載我的標註 CSV",
+                            data=csv_bytes,
+                            file_name=f"annotations_{annotator_name.strip()}.csv",
+                            mime="text/csv",
+                            help="只包含你自己的標註資料",
+                        )
 
             with col_sync:
                 if st.button(
@@ -1498,7 +1371,6 @@ else:
                                 st.warning(f"本地已儲存，但同步 Google Sheet 失敗：{e}")
                             st.session_state[confirm_key] = None
 
-    # ─── 下方導覽 ───
     st.divider()
     col1, col2 = st.columns(2)
     with col1:
