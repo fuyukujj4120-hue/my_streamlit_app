@@ -1297,31 +1297,50 @@ else:
                 or []
             )
 
+            is_multi_emotion = bool(
+                step12_result.get("multi_emotion_conflict")
+                or step3_result.get("multi_emotion_conflict")
+            )
+
+            provisional_emotion = suggested_emotion or ""
+
             return {
                 "record_id": compute_record_id(annotator_name.strip(), current_video_name),
                 "video_file": current_video_name,
+
                 "eye_selected": json.dumps(eye_selected, ensure_ascii=False),
                 "ear_selected": json.dumps(ear_selected, ensure_ascii=False),
                 "tail_selected": json.dumps(tail_selected, ensure_ascii=False),
                 "limb_selected": json.dumps(limb_selected, ensure_ascii=False),
                 "behavior_selected": json.dumps(st.session_state.step3_selected_behavior, ensure_ascii=False),
-                "step12_provisional_emotion": step12_provisional or "",
-                "step3_provisional_emotion": step3_provisional or "",
+
+                # 暫定情緒
+                
                 "suggested_emotion": suggested_emotion or "",
+
+                # 多情緒
+                "is_multi_emotion": str(is_multi_emotion),
+                "multi_emotion_conflict": str(is_multi_emotion),
+                "conflicting_emotions": json.dumps(conflicting, ensure_ascii=False),
+
+             # 最終
                 "final_emotion": final_emotion,
                 "final_matches_suggested": str(final_emotion == (suggested_emotion or "")),
-                "multi_emotion_conflict": str(bool(conflicting)),
-                "conflicting_emotions": json.dumps(conflicting, ensure_ascii=False),
+
+                # 信心與條件
                 "confidence": confidence,
                 "step12_condition": step12_result.get("matched_condition", "none"),
                 "step12_summary": step12_result.get("summary", ""),
                 "step3_mode": step3_result.get("mode", ""),
                 "step3_summary": step3_result.get("summary", ""),
+
+                # 原始勾選
                 "step1_selected_core_all": json.dumps(st.session_state.step1_selected_core, ensure_ascii=False),
                 "step1_unknown_core_groups": json.dumps(st.session_state.step1_unknown_core, ensure_ascii=False),
                 "step2_selected_aux_all": json.dumps(st.session_state.step2_selected_aux, ensure_ascii=False),
                 "step2_unknown_aux_groups": json.dumps(st.session_state.step2_unknown_aux, ensure_ascii=False),
                 "step3_unknown_behavior": str(st.session_state.step3_unknown_behavior),
+
                 "note": note,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
