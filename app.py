@@ -706,13 +706,13 @@ def evaluate_step3_supplement(step12_emotion, selected_behavior, unknown_behavio
         return {
             "behavior_emotion": behavior_emotion,
             "confidence": "高等",
-            "summary": f"✅ 行為與暫定情緒一致（{step12_emotion}）→ 高等信心",
+            "summary": f"✅ 行為與前述標註一致（{step12_emotion}）→ 高等信心",
         }
     else:
         return {
             "behavior_emotion": behavior_emotion,
             "confidence": "中等",
-            "summary": f"⚠️ 行為（{behavior_emotion}）與暫定情緒（{step12_emotion}）不同 → 中等信心",
+            "summary": f"⚠️ 行為（{behavior_emotion}）與前述標註（{step12_emotion}）不同 → 中等信心",
         }
 
 
@@ -1277,9 +1277,9 @@ else:
         st.markdown("## Step 4：最終情緒確認")
 
         # ─── 摘要框 ───
-        st.markdown(f"- **Step 1+2 暫定情緒：** {step12_provisional or '（未達條件）'}")
+        
         st.markdown(f"- **Step 1+2 結果：** {step12_result.get('summary', '—')}")
-        st.markdown(f"- **Step 3 暫定情緒：** {step3_provisional or '（無）'}")
+       
         st.markdown(f"- **Step 3 結果：** {step3_result.get('summary', '—')}")
 
         # 多情緒衝突顯示
@@ -1344,7 +1344,7 @@ else:
             if suggested_emotion and selected_final != suggested_emotion:
                 inconsistency_msg = (
                     f"你選擇的最終情緒「{selected_final}」"
-                    f"與系統建議的暫定情緒「{suggested_emotion}」**不一致**。"
+                    f"與前述標註「{suggested_emotion}」**不一致**。"
                 )
 
         if inconsistency_msg:
