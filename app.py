@@ -1,4 +1,3 @@
-
 import json
 import hashlib
 from datetime import datetime
@@ -268,6 +267,23 @@ def show_emotion_dialog(emotion_name: str):
             st.markdown(f"- {opt}")
 
 
+@st.dialog("問題回饋")
+def show_feedback_dialog():
+    st.markdown(
+        """
+**1. 雖然長期接觸貓的話是能讀懂他們的心思**  
+但因為目前主要研究基本的情緒，像是人類喜怒哀樂那樣的情緒，所以不會有更進階的情緒表達。
+
+**2. 或許不耐煩是能歸類於有一點不開心，屬於憤怒的類型嗎？**
+
+**3. 或許休息可能是身體放鬆，但不算是一種行為？**
+        """
+    )
+    if st.button("我知道了", type="primary"):
+        st.session_state["feedback_dialog_seen"] = True
+        st.rerun()
+
+
 def append_to_google_sheet(record: dict, annotator_name: str):
     payload = {**record, "annotator_name": annotator_name, "secret": SHEET_SECRET}
     resp = requests.post(SHEET_WEBHOOK_URL, json=payload, timeout=20)
@@ -489,6 +505,7 @@ def init_session(videos):
         "step3_result": None,
         "loaded_saved_record_video": None,
         "annotations_store": {},
+        "feedback_dialog_seen": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -694,6 +711,9 @@ st.markdown(
 videos = load_video_files()
 init_session(videos)
 
+if not st.session_state.get("feedback_dialog_seen", False):
+    show_feedback_dialog()
+
 with st.sidebar:
     st.markdown('<div style="font-size:17px;font-weight:800;color:#222;margin-bottom:12px;">📊 標註進度</div>', unsafe_allow_html=True)
 
@@ -816,7 +836,7 @@ else:
                 st.session_state[no_primary_key] = False
 
         if selected_emotion_key not in st.session_state:
-            if saved_record and saved_record.get("final_emotion") in MAIN_EMOTIONS:
+            if saved_record and saved_record.get("final_emotion") in MAIN_EMOTIONS and saved_record.get("final_emotion") != "uncertain":
                 st.session_state[selected_emotion_key] = saved_record.get("final_emotion")
             else:
                 st.session_state[selected_emotion_key] = None
@@ -825,7 +845,6 @@ else:
 
         if no_primary:
             selected_emotion = "uncertain"
-            st.session_state[selected_emotion_key] = "uncertain"
             st.info("已勾選「無主要情緒」，系統將主導情緒強制設為 uncertain。")
         else:
             emotion_options = [e for e in MAIN_EMOTIONS if e != "uncertain"]
@@ -838,7 +857,6 @@ else:
                 index=radio_index,
                 key=selected_emotion_key,
             )
-          
 
         st.session_state.step1_has_primary_emotion = (selected_emotion != "uncertain") if selected_emotion else None
 
@@ -1041,6 +1059,8 @@ else:
                 "step3_unknown_behavior": str(st.session_state.step3_unknown_behavior),
                 "final_emotion": final_emotion,
                 "confidence": final_confidence,
+                "step2_summary": step2_result.get("summary", ""),
+                "step3_summary": step3_result.get("summary", ""),
                 "note": note,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
@@ -1099,3 +1119,4 @@ else:
             st.session_state.current_index += 1
             reset_step_flow()
             st.rerun()
+
