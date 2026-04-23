@@ -91,9 +91,9 @@ MAIN_EMOTIONS = ["害怕", "憤怒/狂怒", "歡樂/玩耍", "滿意", "興趣",
 ANNOTATION_RULES = [
     "請先完整觀看，再進行標註",
     "Step 1 先選 1 個主導情緒",
-    "Step 2 依據該情緒勾選可觀察到的特徵（眼睛、耳朵、尾巴、身體）",
+    "Step 2 依據該情緒選擇可觀察到的單一部位特徵（眼睛、耳朵、尾巴、身體）",
     "Step 3 再選該情緒下最符合的行為特徵",
-    "若某一部位或行為無法觀察，勾選「無法判斷」即可",
+    "若某一部位或行為無法觀察，選擇「無法判斷」即可",
     "每段影片僅能標註 1 種主情緒（主導情緒定義為在該片段中出現時間最長且最具代表性的情緒狀態）",
 ]
 
@@ -390,78 +390,9 @@ def get_emotion_feature_groups(emotion_name: str):
     return all_features, behavior
 
 
-def build_saved_selection_map(selected_values, unknown_groups=None):
-    selected_map = {feature: True for feature in (selected_values or [])}
-    unknown_map = {group: True for group in (unknown_groups or [])}
-    return selected_map, unknown_map
-
-
-def render_grouped_feature_selector(
-    title: str,
-    group_dict: dict,
-    page_index: int,
-    prefix: str,
-    saved_values: dict,
-    saved_unknown_groups: dict,
-):
-    if title:
-        st.markdown(title)
-
-    selected = []
-    unknown_groups = []
-
-    groups = list(group_dict.keys())
-    for idx_group, group_name in enumerate(groups):
-        features = group_dict.get(group_name, [])
-        if not features:
-            continue
-
-        unknown_key = f"{prefix}_{page_index}_{group_name}_unknown"
-        if unknown_key not in st.session_state:
-            st.session_state[unknown_key] = saved_unknown_groups.get(group_name, False)
-
-        feature_keys = []
-        for idx, feature in enumerate(features):
-            feature_key = f"{prefix}_{page_index}_{group_name}_{idx}_{feature}"
-            feature_keys.append((feature, feature_key))
-            if feature_key not in st.session_state:
-                st.session_state[feature_key] = saved_values.get(feature, False)
-
-        selected_in_group = [
-            feature for feature, feature_key in feature_keys
-            if st.session_state.get(feature_key, False)
-        ]
-        unknown_disabled = len(selected_in_group) > 0 and not st.session_state.get(unknown_key, False)
-
-        h1, h2 = st.columns([8, 2])
-        with h1:
-            st.markdown(f"### {group_name}")
-        with h2:
-            st.checkbox("無法判斷", key=unknown_key, disabled=unknown_disabled)
-
-        is_unknown = st.session_state.get(unknown_key, False)
-        if is_unknown:
-            unknown_groups.append(group_name)
-            for _, feature_key in feature_keys:
-                st.session_state[feature_key] = False
-            st.caption(f"{group_name} 已標為無法判斷，因此不能再勾選其他特徵。")
-
-        cols = st.columns(3)
-        for idx, (feature, feature_key) in enumerate(feature_keys):
-            with cols[idx % 3]:
-                checked = st.checkbox(feature, key=feature_key, disabled=is_unknown)
-                if checked and not is_unknown:
-                    selected.append(feature)
-
-        if idx_group != len(groups) - 1:
-            st.divider()
-
-    return selected, unknown_groups
-
-
 def reset_feature_widget_state(video_index: int):
     prefixes = [
-        f"step2_all_{video_index}_",
+        f"step2_single_{video_index}_",
         f"step3_behavior_{video_index}_",
     ]
     keys_to_delete = [
@@ -642,6 +573,65 @@ def render_progress_banner():
                 st.markdown(f"⬜ {label}")
 
     st.divider()
+
+
+def load_saved_step2_group_choices(saved_record):
+    if not saved_record:
+        return {}
+
+    mapping = {}
+    for group_name in ["眼睛", "耳朵", "尾巴", "身體"]:
+        selected_raw = saved_record.get(f"step2_{group_name}", "[]")
+        try:
+            selected_list = json.loads(selected_raw) if selected_raw else []
+        except Exception:
+            selected_list = []
+
+        unknown_flag = str(saved_record.get(f"step2_{group_name}_無法判斷", "False")) == "True"
+
+        if unknown_flag:
+            mapping[group_name] = "無法判斷"
+        elif selected_list:
+            mapping[group_name] = selected_list[0]
+        else:
+            mapping[group_name] = "未選擇"
+    return mapping
+
+
+def render_single_choice_feature_selector(group_dict, page_index, prefix, saved_choices):
+    selected_features = []
+    unknown_groups = []
+
+    groups = list(group_dict.keys())
+    for idx_group, group_name in enumerate(groups):
+        options = ["未選擇"] + group_dict.get(group_name, []) + ["無法判斷"]
+        widget_key = f"{prefix}_{page_index}_{group_name}"
+
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = saved_choices.get(group_name, "未選擇")
+
+        c1, c2 = st.columns([2, 8])
+        with c1:
+            st.markdown(f"### {group_name}")
+        with c2:
+            choice = st.radio(
+                f"{group_name}選項",
+                options,
+                index=options.index(st.session_state[widget_key]) if st.session_state[widget_key] in options else 0,
+                key=widget_key,
+                horizontal=True,
+                label_visibility="collapsed",
+            )
+
+        if choice == "無法判斷":
+            unknown_groups.append(group_name)
+        elif choice != "未選擇":
+            selected_features.append(choice)
+
+        if idx_group != len(groups) - 1:
+            st.divider()
+
+    return selected_features, unknown_groups
 
 
 def split_step2_features_by_group(selected_emotion_local, selected_features):
@@ -850,60 +840,39 @@ else:
 
         else:
             all_groups, _ = get_emotion_feature_groups(selected_emotion)
+            saved_choices = load_saved_step2_group_choices(saved_record)
 
-            default_values, default_unknown = build_saved_selection_map(
-                st.session_state.step2_selected_features,
-                st.session_state.step2_unknown_groups,
-            )
-
-            selected_features, unknown_groups = render_grouped_feature_selector(
-                "",
+            selected_features, unknown_groups = render_single_choice_feature_selector(
                 all_groups,
                 st.session_state.current_index,
-                "step2_all",
-                default_values,
-                default_unknown,
+                "step2_single",
+                saved_choices,
             )
 
-            st.divider()
-            c1, c2, c3 = st.columns(3)
+            auto_result = evaluate_feature_support(selected_emotion, selected_features, unknown_groups)
+            st.session_state.step2_selected_features = selected_features
+            st.session_state.step2_unknown_groups = unknown_groups
+            st.session_state.step2_result = auto_result
 
+            st.divider()
+            if auto_result["feature_count"] >= 1:
+                st.markdown(
+                    f'<div class="ok-box"><b>{auto_result["summary"]}</b></div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f'<div class="warn-box"><b>{auto_result["summary"]}</b></div>',
+                    unsafe_allow_html=True,
+                )
+
+            c1, c2 = st.columns(2)
             with c1:
                 if st.button("返回上一步", key=f"step2_back_{st.session_state.current_index}"):
                     go_to_step1()
 
             with c2:
-                if st.button("檢查 Step 2", key=f"step2_check_{st.session_state.current_index}"):
-                    st.session_state.step2_selected_features = selected_features
-                    st.session_state.step2_unknown_groups = unknown_groups
-                    st.session_state.step2_result = evaluate_feature_support(
-                        selected_emotion,
-                        selected_features,
-                        unknown_groups,
-                    )
-                    st.rerun()
-
-            result2 = st.session_state.step2_result
-            can_continue = False
-            if result2:
-                if result2["feature_count"] >= 1:
-                    st.markdown(
-                        f'<div class="ok-box"><b>{result2["summary"]}</b></div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(
-                        f'<div class="warn-box"><b>{result2["summary"]}</b></div>',
-                        unsafe_allow_html=True,
-                    )
-                can_continue = True
-
-            with c3:
-                if st.button(
-                    "繼續 → Step 3",
-                    key=f"step2_next_{st.session_state.current_index}",
-                    disabled=not can_continue,
-                ):
+                if st.button("繼續 → Step 3", key=f"step2_next_{st.session_state.current_index}"):
                     st.session_state.annotation_step = 3
                     st.rerun()
 
@@ -927,11 +896,20 @@ else:
         if behavior_key not in st.session_state:
             if st.session_state.step3_selected_behavior:
                 st.session_state[behavior_key] = st.session_state.step3_selected_behavior[0]
+            elif saved_record:
+                try:
+                    saved_behavior = json.loads(saved_record.get("step3_selected_behavior", "[]"))
+                except Exception:
+                    saved_behavior = []
+                st.session_state[behavior_key] = saved_behavior[0] if saved_behavior else None
             else:
                 st.session_state[behavior_key] = None
 
         if behavior_unknown_key not in st.session_state:
-            st.session_state[behavior_unknown_key] = st.session_state.step3_unknown_behavior
+            if saved_record:
+                st.session_state[behavior_unknown_key] = str(saved_record.get("step3_unknown_behavior", "False")) == "True"
+            else:
+                st.session_state[behavior_unknown_key] = st.session_state.step3_unknown_behavior
 
         if selected_emotion == "uncertain":
             st.info("你已選擇 uncertain，行為步驟可略過。")
@@ -972,47 +950,36 @@ else:
                     selected_behavior = []
                     st.info("此情緒目前沒有可選行為。")
 
-            st.divider()
-            c1, c2, c3 = st.columns(3)
+            auto_result = evaluate_behavior_support(
+                selected_emotion,
+                step2_result,
+                selected_behavior,
+                behavior_unknown,
+            )
+            st.session_state.step3_selected_behavior = selected_behavior
+            st.session_state.step3_unknown_behavior = behavior_unknown
+            st.session_state.step3_result = auto_result
 
+            st.divider()
+            if auto_result["confidence"] == "高":
+                box_class = "ok-box"
+            elif auto_result["confidence"] == "中":
+                box_class = "warn-box"
+            else:
+                box_class = "low-box"
+
+            st.markdown(
+                f'<div class="{box_class}"><b>{auto_result["summary"]}</b></div>',
+                unsafe_allow_html=True,
+            )
+
+            c1, c2 = st.columns(2)
             with c1:
                 if st.button("返回上一步", key=f"step3_back_{st.session_state.current_index}"):
                     go_to_step2()
 
             with c2:
-                if st.button("檢查 Step 3", key=f"step3_check_{st.session_state.current_index}"):
-                    st.session_state.step3_selected_behavior = selected_behavior
-                    st.session_state.step3_unknown_behavior = behavior_unknown
-                    st.session_state.step3_result = evaluate_behavior_support(
-                        selected_emotion,
-                        step2_result,
-                        selected_behavior,
-                        behavior_unknown,
-                    )
-                    st.rerun()
-
-            result3 = st.session_state.step3_result
-            can_continue = False
-            if result3:
-                if result3["confidence"] == "高":
-                    box_class = "ok-box"
-                elif result3["confidence"] == "中":
-                    box_class = "warn-box"
-                else:
-                    box_class = "low-box"
-
-                st.markdown(
-                    f'<div class="{box_class}"><b>{result3["summary"]}</b></div>',
-                    unsafe_allow_html=True,
-                )
-                can_continue = True
-
-            with c3:
-                if st.button(
-                    "繼續 → Step 4",
-                    key=f"step3_next_{st.session_state.current_index}",
-                    disabled=not can_continue,
-                ):
+                if st.button("繼續 → Step 4", key=f"step3_next_{st.session_state.current_index}"):
                     st.session_state.annotation_step = 4
                     st.rerun()
 
@@ -1044,6 +1011,12 @@ else:
             index=default_index,
             key=f"final_emotion_radio_{st.session_state.current_index}",
         )
+
+        if selected_final != selected_emotion:
+            st.markdown(
+                f'<div class="warn-box"><b>⚠️ 和先前情緒不一致：先前為「{selected_emotion}」，目前最終情緒為「{selected_final}」。</b></div>',
+                unsafe_allow_html=True,
+            )
 
         default_note = saved_record.get("note", "") if saved_record else ""
         note = st.text_area(
@@ -1098,15 +1071,34 @@ else:
             }
             return record
 
-        c_back, c_save = st.columns(2)
+        c_back, c_download, c_save = st.columns([2, 3, 3])
 
         with c_back:
             if st.button("返回上一步", key=f"step4_back_{st.session_state.current_index}"):
                 go_to_step2()
 
+        df_mine = get_annotations_df(annotator_name) if annotator_name else pd.DataFrame()
+        current_record = build_record(selected_final)
+        if current_record is not None:
+            preview_df = pd.concat([df_mine[df_mine["video_file"] != current_video_name], pd.DataFrame([current_record])], ignore_index=True) if not df_mine.empty and "video_file" in df_mine.columns else pd.DataFrame([current_record])
+            csv_bytes = preview_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+        else:
+            csv_bytes = None
+
+        with c_download:
+            st.download_button(
+                label="⬇️ 下載我的標註 CSV",
+                data=csv_bytes if csv_bytes is not None else b"",
+                file_name=f"annotations_{annotator_name.strip() if annotator_name else 'annotations'}.csv",
+                mime="text/csv",
+                help="按下後會下載到你自己的電腦",
+                key=f"download_csv_{st.session_state.current_index}",
+                disabled=(csv_bytes is None),
+            )
+
         with c_save:
             if st.button("☁️ 儲存並同步 Google Sheet", key=f"save_sync_{st.session_state.current_index}"):
-                record = build_record(selected_final)
+                record = current_record
                 if record:
                     upsert_annotation(record, annotator_name)
                     st.session_state.completed = len(get_annotations_df(annotator_name))
@@ -1116,24 +1108,6 @@ else:
                         st.success("✅ 已同步到 Google Sheet，並可下載到你的電腦。")
                     except Exception as e:
                         st.warning(f"已保留本次標註資料，下載仍可使用；但同步 Google Sheet 失敗：{e}")
-
-        st.markdown("---")
-        st.markdown("### 下載到你的電腦")
-
-        if annotator_name:
-            df_mine = get_annotations_df(annotator_name)
-            if not df_mine.empty:
-                csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                st.download_button(
-                    label="⬇️ 下載我的標註 CSV",
-                    data=csv_bytes,
-                    file_name=f"annotations_{annotator_name.strip()}.csv",
-                    mime="text/csv",
-                    help="按下後會下載到你自己的電腦",
-                    key=f"download_csv_{st.session_state.current_index}",
-                )
-            else:
-                st.info("目前還沒有可下載的標註資料。請先儲存。")
 
     st.divider()
     col1, col2 = st.columns(2)
@@ -1148,3 +1122,4 @@ else:
             st.session_state.current_index += 1
             reset_step_flow()
             st.rerun()
+
