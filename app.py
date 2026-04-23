@@ -1041,8 +1041,6 @@ else:
                 "step3_unknown_behavior": str(st.session_state.step3_unknown_behavior),
                 "final_emotion": final_emotion,
                 "confidence": final_confidence,
-                "step2_summary": step2_result.get("summary", ""),
-                "step3_summary": step3_result.get("summary", ""),
                 "note": note,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
