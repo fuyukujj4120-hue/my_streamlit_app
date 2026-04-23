@@ -1217,8 +1217,9 @@ else:
                     df_mine = load_existing_annotations(annotator_name)
                     if not df_mine.empty:
                         csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                        st.caption(f"本機儲存位置：{output_path}")
-            st.download_button(
+                        current_output_path = get_annotation_file(annotator_name)
+                        st.caption(f"本機儲存位置：{current_output_path}")
+                        st.download_button(
                             label="⬇️ 下載我的標註 CSV",
                             data=csv_bytes,
                             file_name=f"annotations_{annotator_name.strip()}.csv",
