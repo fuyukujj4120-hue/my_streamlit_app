@@ -12,7 +12,6 @@ st.set_page_config(page_title="貓咪情緒標註系統", layout="wide")
 st.markdown(
     """
     <style>
-    /* ── Sidebar ── */
     section[data-testid="stSidebar"] {
         width: 560px !important;
         min-width: 560px !important;
@@ -31,7 +30,6 @@ st.markdown(
         margin: 0 auto !important;
     }
 
-    /* ── Status boxes ── */
     .warn-box {
         padding: 12px 16px;
         border-radius: 10px;
@@ -60,82 +58,41 @@ st.markdown(
         font-size: 15px;
     }
 
-    /* ── Step 1: Emotion radio cards ── */
-    div[data-testid="stRadio"][data-emotion-step="1"] > div {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        margin-top: 8px;
-    }
-    div[data-testid="stRadio"][data-emotion-step="1"] label {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 14px 20px;
-        border-radius: 14px;
-        border: 2px solid #e0e0e0;
-        background: #fff;
-        cursor: pointer;
-        transition: all 0.18s ease;
-        min-width: 150px;
-        font-size: 18px !important;
-        font-weight: 600 !important;
-        color: #444;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
-    div[data-testid="stRadio"][data-emotion-step="1"] label:hover {
-        border-color: #7f77dd;
-        background: #f5f4ff;
-        color: #534ab7;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(127,119,221,0.2);
-    }
-    div[data-testid="stRadio"][data-emotion-step="1"] input:checked + div {
-        border-color: #534ab7 !important;
-        background: #eeedfe !important;
-        color: #3c3489 !important;
-    }
-
-    /* ── Step 1 radio: large label text ── */
     div[data-testid="stRadio"] > label p {
         font-size: 22px !important;
         font-weight: 700 !important;
     }
 
-    /* ── Step 2 & 3: Feature / behavior radios as pills, 3 per row ── */
     .feature-radio div[data-testid="stRadio"] > div[role="radiogroup"] {
         display: grid !important;
-        grid-template-columns: repeat(3, 1fr) !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
         gap: 8px !important;
+        width: 100% !important;
     }
     .feature-radio div[data-testid="stRadio"] label {
-        padding: 8px 14px !important;
-        border-radius: 20px !important;
+        padding: 8px 12px !important;
+        border-radius: 18px !important;
         border: 1.5px solid #d0d0d0 !important;
         background: #fafafa !important;
         cursor: pointer !important;
-        font-size: 13.5px !important;
+        font-size: 13px !important;
         font-weight: 500 !important;
         color: #555 !important;
         transition: all 0.15s ease !important;
-        line-height: 1.4 !important;
+        line-height: 1.35 !important;
         text-align: center !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        min-height: 48px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
     }
     .feature-radio div[data-testid="stRadio"] label:hover {
         border-color: #534ab7 !important;
         background: #f0effe !important;
         color: #3c3489 !important;
     }
-    .feature-radio div[data-testid="stRadio"] input[type="radio"]:checked ~ div {
-        background: #eeedfe !important;
-        border-color: #534ab7 !important;
-        color: #3c3489 !important;
-        font-weight: 600 !important;
-    }
-    /* Hide radio dots in pill mode */
     .feature-radio div[data-testid="stRadio"] input[type="radio"] {
         display: none !important;
     }
@@ -143,57 +100,6 @@ st.markdown(
         display: none !important;
     }
 
-    /* ── Group label badge ── */
-    .group-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 8px;
-        background: #f3f3f3;
-        border: 1px solid #ddd;
-        font-size: 13px;
-        font-weight: 700;
-        color: #444;
-        letter-spacing: 0.04em;
-        margin-bottom: 6px;
-    }
-
-    /* ── Emotion card in step 1 ── */
-    .emotion-card {
-        background: #fafafa;
-        border: 1.5px solid #e4e4e4;
-        border-radius: 14px;
-        padding: 16px 20px;
-        margin-top: 12px;
-    }
-    .emotion-card h4 {
-        margin: 0 0 6px 0;
-        font-size: 17px;
-        color: #333;
-    }
-    .emotion-card .def {
-        font-size: 14px;
-        color: #666;
-        margin-bottom: 10px;
-    }
-    .emotion-card .feature-item {
-        font-size: 13px;
-        color: #555;
-        padding: 2px 0;
-    }
-
-    /* ── Step progress ── */
-    .step-active {
-        font-weight: 700;
-        color: #534ab7;
-    }
-    .step-done {
-        color: #3a9c5f;
-    }
-    .step-pending {
-        color: #aaa;
-    }
-
-    /* ── Step section header ── */
     .section-title {
         font-size: 22px;
         font-weight: 800;
@@ -204,22 +110,12 @@ st.markdown(
         display: inline-block;
     }
 
-    /* ── Divider between feature groups ── */
     .group-divider {
         border: none;
         border-top: 1px dashed #e0e0e0;
         margin: 12px 0;
     }
 
-    /* ── "無法判斷" pill special style ── */
-    .feature-radio div[data-testid="stRadio"] label[data-value="無法判斷"],
-    .feature-radio div[data-testid="stRadio"] label:last-child {
-        border-style: dashed !important;
-        color: #999 !important;
-        background: #f8f8f8 !important;
-    }
-
-    /* ── Sidebar emotion definition buttons ── */
     section[data-testid="stSidebar"] div[data-testid="stButton"] > button {
         border-radius: 10px !important;
         font-size: 13px !important;
@@ -232,52 +128,12 @@ st.markdown(
         color: #3c3489 !important;
     }
 
-    /* ── Main action buttons ── */
     div[data-testid="column"] div[data-testid="stButton"] > button {
         border-radius: 10px !important;
         font-size: 15px !important;
         padding: 10px 18px !important;
         font-weight: 600 !important;
         transition: all 0.15s ease !important;
-    }
-
-    /* ── Navigation next buttons ── */
-    div[data-testid="column"]:last-child div[data-testid="stButton"] > button:not([disabled]) {
-        background: #534ab7 !important;
-        color: #fff !important;
-        border-color: #534ab7 !important;
-    }
-    div[data-testid="column"]:last-child div[data-testid="stButton"] > button:not([disabled]):hover {
-        background: #3c3489 !important;
-        border-color: #3c3489 !important;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(83,74,183,0.3) !important;
-    }
-
-    /* ── Final emotion radio (step 4) ── */
-    div[data-testid="stRadio"].final-emotion-radio > div[role="radiogroup"] {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-    }
-    div[data-testid="stRadio"].final-emotion-radio label {
-        padding: 10px 18px;
-        border-radius: 12px;
-        border: 2px solid #ddd;
-        background: #fafafa;
-        font-size: 16px !important;
-        font-weight: 600 !important;
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-    div[data-testid="stRadio"].final-emotion-radio label:hover {
-        border-color: #534ab7;
-        background: #f0effe;
-    }
-    div[data-testid="stRadio"].final-emotion-radio input:checked + div {
-        border-color: #534ab7 !important;
-        background: #eeedfe !important;
-        color: #3c3489 !important;
     }
     </style>
     """,
@@ -304,8 +160,8 @@ video_names = [
     "v130__s000010__e000020.mp4",
     "v180__s000000__e000010.mp4",
 ]
-
 VIDEOS = [{"name": name, "url": f"{BASE_URL}{name}"} for name in video_names]
+
 MAIN_EMOTIONS = ["害怕", "憤怒/狂怒", "歡樂/玩耍", "滿意", "興趣", "uncertain"]
 
 EMOTION_ICONS = {
@@ -319,16 +175,16 @@ EMOTION_ICONS = {
 
 ANNOTATION_RULES = [
     ("請先完整觀看，再進行標註", False),
-    ("Step 1 先選 1 個主導情緒", False),
+    ("Step 1 先判斷是否有主要情緒；若無主要情緒則強制為 uncertain", False),
     ("Step 2 依據該情緒選擇各部位最符合的單一特徵（眼睛、耳朵、尾巴、身體）", False),
     ("Step 3 再選該情緒下最符合的單一行為特徵", False),
-    ("若某一部位或行為無法觀察，選擇「無法判斷」即可", True),   # bold=True
-    ("每段影片僅能標註 1 種主情緒（主導情緒定義為在該片段中出現時間最長且最具代表性的情緒狀態）", False),
+    ("若某一部位或行為無法觀察，選擇「無法判斷」即可", True),
+    ("若沒有選擇，系統會以 null 記錄", True),
 ]
 
 EMOTION_SCHEMA = {
     "害怕": {
-        "definition": "fear",
+        "definition": "由立即感知到的危險或危險的威脅引起的，表現為警惕和試圖撤退或逃跑",
         "features": {
             "眼睛": ["雙眼睜大", "瞳孔呈圓形且散大", "眨眼", "目光向左", "半眨眼", "緊閉雙眼(行為)", "避免眼神接觸(行為)"],
             "耳朵": ["向側面", "耳廓不可見", "背面壓平"],
@@ -338,7 +194,7 @@ EMOTION_SCHEMA = {
         },
     },
     "憤怒/狂怒": {
-        "definition": "憤怒/狂怒",
+        "definition": "由執行行動/實現目標的願望受挫或資源競爭引起，表現為攻擊性或攻擊威脅。",
         "features": {
             "眼睛": ["瞳孔呈橢圓形且散大", "直視"],
             "耳朵": ["向側面旋轉", "可見內耳廓"],
@@ -348,7 +204,7 @@ EMOTION_SCHEMA = {
         },
     },
     "歡樂/玩耍": {
-        "definition": "歡樂/玩耍",
+        "definition": "表現為非功能性行為，包括運動遊戲、社交遊戲或物件遊戲。",
         "features": {
             "眼睛": ["瞳孔因興奮而放大/變圓", "瞳孔放鬆/變軟"],
             "耳朵": ["直立且面向前方"],
@@ -364,7 +220,7 @@ EMOTION_SCHEMA = {
         },
     },
     "滿意": {
-        "definition": "滿意",
+        "definition": "由需求和願望得到滿足而產生的正向情緒狀態，表現為休息、平靜和親和。",
         "features": {
             "眼睛": ["瞳孔呈小的縮瞳狀垂直卵圓形", "半睜"],
             "耳朵": ["直立且面向前方"],
@@ -374,7 +230,7 @@ EMOTION_SCHEMA = {
         },
     },
     "興趣": {
-        "definition": "興趣",
+        "definition": "由新奇或顯著刺激引起，表現為注意、定向或探索行為。",
         "features": {
             "眼睛": ["瞳孔放大/呈圓形", "目光向右"],
             "耳朵": ["耳朵直立並朝向刺激物", "耳朵輕微抖動"],
@@ -446,20 +302,17 @@ def get_annotations_store():
 def get_saved_record(annotator_name: str, video_name: str):
     if not annotator_name:
         return None
-    store = get_annotations_store()
-    return store.get(compute_store_key(annotator_name, video_name))
+    return get_annotations_store().get(compute_store_key(annotator_name, video_name))
 
 
 def upsert_annotation(record: dict, annotator_name: str):
-    store = get_annotations_store()
-    store[compute_store_key(annotator_name, record["video_file"])] = record
+    get_annotations_store()[compute_store_key(annotator_name, record["video_file"])] = record
 
 
 def get_annotations_df(annotator_name: str):
     if not annotator_name:
         return pd.DataFrame()
-    store = get_annotations_store()
-    rows = [v for v in store.values() if v.get("annotator_name", "") == annotator_name.strip()]
+    rows = [v for v in get_annotations_store().values() if v.get("annotator_name", "") == annotator_name.strip()]
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
@@ -513,6 +366,8 @@ def reset_feature_widget_state(video_index: int):
         f"step3_behavior_value_{video_index}",
         f"step3_behavior_radio_{video_index}",
         f"step3_behavior_unknown_{video_index}",
+        f"step1_no_primary_{video_index}",
+        f"step1_emotion_{video_index}",
     ]
     keys_to_delete = [k for k in list(st.session_state.keys()) if any(k.startswith(prefix) for prefix in prefixes)]
     for k in keys_to_delete:
@@ -529,6 +384,7 @@ def reset_step_flow():
     video_index = st.session_state.current_index
     st.session_state.annotation_step = 1
     st.session_state.selected_emotion = None
+    st.session_state.step1_has_primary_emotion = None
     st.session_state.step2_selected_features = []
     st.session_state.step2_unknown_groups = []
     st.session_state.step2_result = None
@@ -567,7 +423,6 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
     if not selected_emotion:
         return {"emotion": None, "feature_count": 0, "confidence": "低", "summary": "尚未選擇情緒。"}
 
-    # uncertain: features are recorded only, no count-based confidence
     if selected_emotion == "uncertain":
         summary = "情緒為 uncertain，特徵只作為紀錄。"
         if unknown_groups:
@@ -575,7 +430,6 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
         return {"emotion": selected_emotion, "feature_count": len(selected_features), "confidence": "uncertain", "summary": summary}
 
     feature_count = len(selected_features)
-
     if feature_count >= 2:
         summary = "已選擇 2 個以上 Step 2 特徵。"
     elif feature_count == 1:
@@ -585,7 +439,6 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
 
     if unknown_groups:
         summary += f"（無法判斷部位：{', '.join(unknown_groups)}）"
-
     return {"emotion": selected_emotion, "feature_count": feature_count, "confidence": "低", "summary": summary}
 
 
@@ -595,13 +448,10 @@ def evaluate_behavior_support(selected_emotion, step2_result, selected_behavior,
 
     has_behavior = (not unknown_behavior) and len(selected_behavior) > 0
 
-    # uncertain: skip confidence calculation entirely
     if selected_emotion == "uncertain":
-        summary = "情緒為 uncertain，特徵與行為只作為紀錄。"
-        return {"emotion": selected_emotion, "confidence": "uncertain", "summary": summary, "matched": has_behavior}
+        return {"emotion": selected_emotion, "confidence": "uncertain", "summary": "情緒為 uncertain，特徵與行為只作為紀錄。", "matched": has_behavior}
 
     feature_count = step2_result.get("feature_count", 0)
-
     if feature_count >= 2 and has_behavior:
         confidence = "高"
         summary = "✅ 信心度：高（有任意 2 個 Step 2 特徵 + 行為）"
@@ -629,6 +479,7 @@ def init_session(videos):
         "completed": 0,
         "annotation_step": 1,
         "selected_emotion": None,
+        "step1_has_primary_emotion": None,
         "step2_selected_features": [],
         "step2_unknown_groups": [],
         "step2_result": None,
@@ -649,7 +500,6 @@ def render_progress_banner():
     step_map = {1: 0, 2: 1, 3: 2, 4: 3}
     current_label_idx = step_map.get(step, 0)
 
-    # Render as styled HTML progress bar
     items_html = ""
     for i, label in enumerate(labels):
         if i < current_label_idx:
@@ -680,18 +530,9 @@ def render_progress_banner():
             transition: all 0.2s;
         }}
         .prog-item:last-child {{ border-right: none; }}
-        .prog-done {{
-            background: #edf7ed;
-            color: #2e7d32;
-        }}
-        .prog-active {{
-            background: #534ab7;
-            color: #fff;
-        }}
-        .prog-pending {{
-            background: #f9f9f9;
-            color: #aaa;
-        }}
+        .prog-done {{ background: #edf7ed; color: #2e7d32; }}
+        .prog-active {{ background: #534ab7; color: #fff; }}
+        .prog-pending {{ background: #f9f9f9; color: #aaa; }}
         </style>
         <div class="progress-bar">{items_html}</div>
         """,
@@ -726,13 +567,10 @@ def load_saved_step3_choice(saved_record):
     return selected_value, unknown_flag
 
 
-# ── Pill-style single choice selector for Step 2 features ──
 def render_single_choice_feature_selector(group_dict, page_index, prefix, saved_choices):
     selected_features = []
     unknown_groups = []
     groups = list(group_dict.keys())
-
-    GROUP_ICONS = {"眼睛": "👁️", "耳朵": "🐱", "尾巴": "🐈", "身體": "🐾"}
 
     for idx_group, group_name in enumerate(groups):
         options = group_dict.get(group_name, []) + ["無法判斷"]
@@ -741,25 +579,21 @@ def render_single_choice_feature_selector(group_dict, page_index, prefix, saved_
         if widget_key not in st.session_state:
             st.session_state[widget_key] = saved_choices.get(group_name)
 
-        icon = GROUP_ICONS.get(group_name, "")
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
-            f'<span style="font-size:18px;">{icon}</span>'
             f'<span style="font-size:15px;font-weight:700;color:#333;">{group_name}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
 
         current_value = st.session_state[widget_key]
-
-        # Render pills using columns + buttons approach via markdown container
         st.markdown('<div class="feature-radio">', unsafe_allow_html=True)
         choice = st.radio(
             f"{group_name}選項",
             options,
             index=options.index(current_value) if current_value in options else None,
             key=widget_key,
-            horizontal=True,
+            horizontal=False,
             label_visibility="collapsed",
         )
         st.markdown('</div>', unsafe_allow_html=True)
@@ -775,7 +609,6 @@ def render_single_choice_feature_selector(group_dict, page_index, prefix, saved_
     return selected_features, unknown_groups
 
 
-# ── Pill-style single choice selector for Step 3 behaviors ──
 def render_single_choice_behavior_selector(options, page_index, saved_behavior, saved_unknown):
     behavior_value_key = f"step3_behavior_value_{page_index}"
     behavior_radio_key = f"step3_behavior_radio_{page_index}"
@@ -792,7 +625,6 @@ def render_single_choice_behavior_selector(options, page_index, saved_behavior, 
 
     st.markdown(
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
-        '<span style="font-size:18px;">🎬</span>'
         '<span style="font-size:15px;font-weight:700;color:#333;">行為</span>'
         '</div>',
         unsafe_allow_html=True,
@@ -804,7 +636,7 @@ def render_single_choice_behavior_selector(options, page_index, saved_behavior, 
         choices,
         index=choices.index(st.session_state[behavior_radio_key]) if st.session_state[behavior_radio_key] in choices else None,
         key=behavior_radio_key,
-        horizontal=True,
+        horizontal=False,
         label_visibility="collapsed",
     )
     st.markdown('</div>', unsafe_allow_html=True)
@@ -850,10 +682,6 @@ def split_step2_features_by_group(selected_emotion_local, selected_features):
     return eye_value, ear_value, tail_value, body_value
 
 
-# ═══════════════════════════════════════════════════════
-# MAIN APP
-# ═══════════════════════════════════════════════════════
-
 st.markdown(
     f'<h1 style="font-size:28px;font-weight:800;color:#222;margin-bottom:2px;">'
     f'🐱 {APP_TITLE}</h1>'
@@ -866,10 +694,7 @@ videos = load_video_files()
 init_session(videos)
 
 with st.sidebar:
-    st.markdown(
-        '<div style="font-size:17px;font-weight:800;color:#222;margin-bottom:12px;">📊 標註進度</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div style="font-size:17px;font-weight:800;color:#222;margin-bottom:12px;">📊 標註進度</div>', unsafe_allow_html=True)
 
     total = len(st.session_state.videos)
     completed = st.session_state.completed
@@ -883,28 +708,20 @@ with st.sidebar:
                 <span style="font-weight:700;color:#534ab7;">{pct}%</span>
             </div>
             <div style="background:#e0e0e0;border-radius:6px;height:8px;overflow:hidden;">
-                <div style="background:#534ab7;height:8px;width:{pct}%;border-radius:6px;transition:width 0.3s;"></div>
+                <div style="background:#534ab7;height:8px;width:{pct}%;border-radius:6px;"></div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    annotator_name = st.text_input(
-        "👤 標註者姓名 / 編號",
-        value=st.session_state.get("annotator_name", ""),
-        placeholder="請輸入姓名或編號…",
-    )
+    annotator_name = st.text_input("👤 標註者姓名 / 編號", value=st.session_state.get("annotator_name", ""), placeholder="請輸入姓名或編號…")
     st.session_state["annotator_name"] = annotator_name
 
     if st.button("🏠 回到說明頁", use_container_width=True):
         go_to_instruction()
 
-    if (
-        st.session_state.page == "annotation"
-        and len(st.session_state.videos) > 0
-        and st.session_state.current_index < len(st.session_state.videos)
-    ):
+    if st.session_state.page == "annotation" and len(st.session_state.videos) > 0 and st.session_state.current_index < len(st.session_state.videos):
         sidebar_video = st.session_state.videos[st.session_state.current_index]
         st.markdown("---")
         st.markdown(
@@ -915,10 +732,7 @@ with st.sidebar:
         render_small_video(sidebar_video)
 
     st.markdown("---")
-    st.markdown(
-        '<div style="font-size:13px;font-weight:700;color:#555;margin-bottom:8px;">📖 情緒定義快速查看</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div style="font-size:13px;font-weight:700;color:#555;margin-bottom:8px;">📖 情緒定義快速查看</div>', unsafe_allow_html=True)
     button_labels = {
         "害怕": "😿 害怕",
         "憤怒/狂怒": "😾 憤怒/狂怒",
@@ -930,23 +744,13 @@ with st.sidebar:
     for i, emotion_name in enumerate(EMOTION_SCHEMA.keys()):
         target_col = col1 if i % 2 == 0 else col2
         with target_col:
-            if st.button(
-                button_labels.get(emotion_name, emotion_name),
-                key=f"sidebar_emotion_{emotion_name}",
-                use_container_width=True,
-            ):
+            if st.button(button_labels.get(emotion_name, emotion_name), key=f"sidebar_emotion_{emotion_name}", use_container_width=True):
                 show_emotion_dialog(emotion_name)
-
-
-# ── Pages ──────────────────────────────────────────────
 
 if st.session_state.page == "instruction":
     st.subheader("一、標註規則")
     for i, (rule, is_bold) in enumerate(ANNOTATION_RULES, start=1):
-        if is_bold:
-            st.markdown(f"{i}. **{rule}**")
-        else:
-            st.markdown(f"{i}. {rule}")
+        st.markdown(f"{i}. **{rule}**" if is_bold else f"{i}. {rule}")
 
     st.subheader("二、情緒定義與判斷參考")
     for emo_name, emo_item in EMOTION_SCHEMA.items():
@@ -954,7 +758,6 @@ if st.session_state.page == "instruction":
 
     st.info("請先完整閱讀以上規則與定義，再開始標註。")
     start_disabled = (annotator_name.strip() == "") or (len(st.session_state.videos) == 0)
-
     if len(st.session_state.videos) == 0:
         st.warning("目前找不到影片。")
 
@@ -974,12 +777,7 @@ else:
         if not df_all.empty:
             st.dataframe(df_all, use_container_width=True)
             csv_bytes = df_all.to_csv(index=False).encode("utf-8-sig")
-            st.download_button(
-                "⬇️ 下載標註結果 CSV",
-                data=csv_bytes,
-                file_name=f"annotations_{annotator_name.strip()}.csv",
-                mime="text/csv",
-            )
+            st.download_button("⬇️ 下載標註結果 CSV", data=csv_bytes, file_name=f"annotations_{annotator_name.strip()}.csv", mime="text/csv")
         st.stop()
 
     current_video = st.session_state.videos[st.session_state.current_index]
@@ -1002,57 +800,67 @@ else:
 
     render_progress_banner()
 
-    # ── Step 1 ────────────────────────────────────────
     if st.session_state.annotation_step == 1:
         st.markdown('<div class="section-title">Step 1：選擇主導情緒</div>', unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
+        no_primary_key = f"step1_no_primary_{st.session_state.current_index}"
         selected_emotion_key = f"step1_emotion_{st.session_state.current_index}"
+
+        if no_primary_key not in st.session_state:
+            if saved_record:
+                saved_has_primary = str(saved_record.get("has_primary_emotion", "True")) == "True"
+                st.session_state[no_primary_key] = not saved_has_primary
+            else:
+                st.session_state[no_primary_key] = False
+
         if selected_emotion_key not in st.session_state:
             if saved_record and saved_record.get("final_emotion") in MAIN_EMOTIONS:
                 st.session_state[selected_emotion_key] = saved_record.get("final_emotion")
             else:
                 st.session_state[selected_emotion_key] = None
 
-        # Render emotion options as labeled radio with icons
-        emotion_display = [f"{EMOTION_ICONS.get(e, '')} {e}" for e in MAIN_EMOTIONS]
-        selected_display = st.radio(
-            "請選擇這段影片的主導情緒",
-            emotion_display,
-            index=MAIN_EMOTIONS.index(st.session_state[selected_emotion_key])
-            if st.session_state[selected_emotion_key] in MAIN_EMOTIONS else None,
-            key=selected_emotion_key + "_display",
-        )
+        no_primary = st.checkbox("是否為無主要情緒", key=no_primary_key)
 
-        # Map back to raw emotion name
-        selected_emotion = None
-        if selected_display:
-            for e in MAIN_EMOTIONS:
-                if e in selected_display:
-                    selected_emotion = e
-                    break
-            st.session_state[selected_emotion_key] = selected_emotion
+        if no_primary:
+            selected_emotion = "uncertain"
+            st.session_state[selected_emotion_key] = "uncertain"
+            st.info("已勾選「無主要情緒」，系統將主導情緒強制設為 uncertain。")
+        else:
+            emotion_options = [e for e in MAIN_EMOTIONS if e != "uncertain"]
+            current_value = st.session_state.get(selected_emotion_key)
+            radio_index = emotion_options.index(current_value) if current_value in emotion_options else None
 
-        # Show emotion reference card
+            selected_emotion = st.radio(
+                "請先選擇這段影片的主導情緒",
+                emotion_options,
+                index=radio_index,
+                key=selected_emotion_key,
+            )
+            if selected_emotion:
+                st.session_state[selected_emotion_key] = selected_emotion
+
+        st.session_state.step1_has_primary_emotion = (selected_emotion != "uncertain") if selected_emotion else None
+
         if selected_emotion and selected_emotion in EMOTION_SCHEMA:
             item = EMOTION_SCHEMA[selected_emotion]
-            icon = EMOTION_ICONS.get(selected_emotion, "")
             st.markdown(
                 f"""
                 <div style="background:#f5f4ff;border:1.5px solid #d4d0f5;border-radius:14px;
                 padding:16px 20px;margin-top:16px;">
                 <div style="font-size:20px;font-weight:800;color:#3c3489;margin-bottom:4px;">
-                    {icon} {selected_emotion}
+                    {EMOTION_ICONS.get(selected_emotion, "")} {selected_emotion}
                 </div>
                 <div style="font-size:13px;color:#7366c8;margin-bottom:12px;">定義：{item['definition']}</div>
                 """,
                 unsafe_allow_html=True,
             )
-            with st.expander("查看此情緒的特徵參考", expanded=True):
-                for grp, opts in item["features"].items():
-                    st.markdown(f"- **{grp}**")
-                    for opt in opts:
-                        st.markdown(f"  - {opt}")
+            if selected_emotion != "uncertain":
+                with st.expander("查看此情緒的特徵參考", expanded=True):
+                    for grp, opts in item["features"].items():
+                        st.markdown(f"- **{grp}**")
+                        for opt in opts:
+                            st.markdown(f"  - {opt}")
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.divider()
@@ -1061,17 +869,11 @@ else:
             if st.button("← 返回說明頁", key=f"step1_back_{st.session_state.current_index}"):
                 go_to_instruction()
         with c2:
-            if st.button(
-                "繼續 Step 2 →",
-                key=f"step1_next_{st.session_state.current_index}",
-                disabled=(selected_emotion is None),
-                type="primary",
-            ):
+            if st.button("繼續 Step 2 →", key=f"step1_next_{st.session_state.current_index}", disabled=(selected_emotion is None), type="primary"):
                 st.session_state.selected_emotion = selected_emotion
                 st.session_state.annotation_step = 2
                 st.rerun()
 
-    # ── Step 2 ────────────────────────────────────────
     elif st.session_state.annotation_step == 2:
         selected_emotion = st.session_state.selected_emotion
         st.markdown('<div class="section-title">Step 2：選擇各部位特徵</div>', unsafe_allow_html=True)
@@ -1083,16 +885,10 @@ else:
                 go_to_step1()
             st.stop()
 
-        all_groups = (
-            get_all_step2_groups_union()
-            if selected_emotion == "uncertain"
-            else get_emotion_feature_groups(selected_emotion)[0]
-        )
+        all_groups = get_all_step2_groups_union() if selected_emotion == "uncertain" else get_emotion_feature_groups(selected_emotion)[0]
         saved_choices = load_saved_step2_group_choices(saved_record)
 
-        selected_features, unknown_groups = render_single_choice_feature_selector(
-            all_groups, st.session_state.current_index, "step2_single", saved_choices
-        )
+        selected_features, unknown_groups = render_single_choice_feature_selector(all_groups, st.session_state.current_index, "step2_single", saved_choices)
 
         auto_result = evaluate_feature_support(selected_emotion, selected_features, unknown_groups)
         st.session_state.step2_selected_features = selected_features
@@ -1116,7 +912,6 @@ else:
                 st.session_state.annotation_step = 3
                 st.rerun()
 
-    # ── Step 3 ────────────────────────────────────────
     elif st.session_state.annotation_step == 3:
         selected_emotion = st.session_state.selected_emotion
         step2_result = st.session_state.step2_result or {}
@@ -1129,16 +924,10 @@ else:
                 go_to_step1()
             st.stop()
 
-        behavior_options = (
-            get_all_behavior_union()
-            if selected_emotion == "uncertain"
-            else get_emotion_feature_groups(selected_emotion)[1]
-        )
+        behavior_options = get_all_behavior_union() if selected_emotion == "uncertain" else get_emotion_feature_groups(selected_emotion)[1]
         saved_behavior, saved_unknown = load_saved_step3_choice(saved_record)
 
-        selected_behavior, behavior_unknown = render_single_choice_behavior_selector(
-            behavior_options, st.session_state.current_index, saved_behavior, saved_unknown
-        )
+        selected_behavior, behavior_unknown = render_single_choice_behavior_selector(behavior_options, st.session_state.current_index, saved_behavior, saved_unknown)
 
         auto_result = evaluate_behavior_support(selected_emotion, step2_result, selected_behavior, behavior_unknown)
         st.session_state.step3_selected_behavior = selected_behavior
@@ -1146,9 +935,7 @@ else:
         st.session_state.step3_result = auto_result
 
         st.divider()
-        if auto_result["confidence"] == "uncertain":
-            box_class = "ok-box"
-        elif auto_result["confidence"] == "高":
+        if auto_result["confidence"] in ["uncertain", "高"]:
             box_class = "ok-box"
         elif auto_result["confidence"] == "中":
             box_class = "warn-box"
@@ -1165,7 +952,6 @@ else:
                 st.session_state.annotation_step = 4
                 st.rerun()
 
-    # ── Step 4 ────────────────────────────────────────
     else:
         selected_emotion = st.session_state.selected_emotion
         step2_result = st.session_state.step2_result or {}
@@ -1175,7 +961,6 @@ else:
         st.markdown('<div class="section-title">Step 4：最終確認</div>', unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Summary cards
         conf_color = {"高": "#edf7ed", "中": "#fff8e1", "低": "#fdecea", "uncertain": "#f5f4ff"}
         conf_border = {"高": "#81c995", "中": "#f0c36d", "低": "#f28b82", "uncertain": "#d4d0f5"}
         conf_icon = {"高": "✅", "中": "⚠️", "低": "❗", "uncertain": "❓"}
@@ -1183,23 +968,25 @@ else:
         bd = conf_border.get(final_confidence, "#f28b82")
         ic = conf_icon.get(final_confidence, "❗")
 
+        has_primary_display = "是" if st.session_state.step1_has_primary_emotion else "否"
+
         st.markdown(
             f"""
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">
                 <div style="background:#f5f4ff;border:1px solid #d4d0f5;border-radius:12px;padding:14px;">
-                    <div style="font-size:11px;font-weight:700;color:#9189d0;text-transform:uppercase;
-                    letter-spacing:0.06em;margin-bottom:4px;">Step 1 情緒</div>
-                    <div style="font-size:17px;font-weight:800;color:#3c3489;">
-                        {EMOTION_ICONS.get(selected_emotion or '', '')} {selected_emotion or '—'}</div>
+                    <div style="font-size:11px;font-weight:700;color:#9189d0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">是否有主要情緒</div>
+                    <div style="font-size:17px;font-weight:800;color:#3c3489;">{has_primary_display}</div>
+                </div>
+                <div style="background:#f5f4ff;border:1px solid #d4d0f5;border-radius:12px;padding:14px;">
+                    <div style="font-size:11px;font-weight:700;color:#9189d0;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Step 1 情緒</div>
+                    <div style="font-size:17px;font-weight:800;color:#3c3489;">{EMOTION_ICONS.get(selected_emotion or '', '')} {selected_emotion or '—'}</div>
                 </div>
                 <div style="background:#f5f5f5;border:1px solid #e0e0e0;border-radius:12px;padding:14px;">
-                    <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;
-                    letter-spacing:0.06em;margin-bottom:4px;">Step 2 特徵</div>
+                    <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Step 2 特徵</div>
                     <div style="font-size:13px;color:#444;">{step2_result.get('summary', '—')}</div>
                 </div>
                 <div style="background:{bg};border:1px solid {bd};border-radius:12px;padding:14px;">
-                    <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;
-                    letter-spacing:0.06em;margin-bottom:4px;">信心程度</div>
+                    <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">信心程度</div>
                     <div style="font-size:17px;font-weight:800;">{ic} {final_confidence}</div>
                 </div>
             </div>
@@ -1207,27 +994,9 @@ else:
             unsafe_allow_html=True,
         )
 
-        st.markdown("**請再次確認最終主導情緒：**")
         final_options = MAIN_EMOTIONS
         default_index = final_options.index(selected_emotion) if selected_emotion in final_options else 0
-
-        emotion_display_final = [f"{EMOTION_ICONS.get(e, '')} {e}" for e in final_options]
-        selected_display_final = st.radio(
-            "最終主導情緒",
-            emotion_display_final,
-            index=default_index,
-            key=f"final_emotion_radio_{st.session_state.current_index}",
-            horizontal=True,
-        )
-
-        selected_final = None
-        if selected_display_final:
-            for e in final_options:
-                if e in selected_display_final:
-                    selected_final = e
-                    break
-        if not selected_final:
-            selected_final = final_options[default_index]
+        selected_final = st.radio("請再次確認最終主導情緒：", final_options, index=default_index, key=f"final_emotion_radio_{st.session_state.current_index}", horizontal=True)
 
         if selected_final != selected_emotion:
             st.markdown(
@@ -1236,13 +1005,7 @@ else:
             )
 
         default_note = saved_record.get("note", "") if saved_record else ""
-        note = st.text_area(
-            "📝 備註（選填）",
-            value=default_note,
-            height=100,
-            key=f"note_{st.session_state.current_index}",
-            placeholder="可在此輸入補充說明…",
-        )
+        note = st.text_area("📝 備註（選填）", value=default_note, height=100, key=f"note_{st.session_state.current_index}", placeholder="可在此輸入補充說明…")
 
         st.divider()
 
@@ -1258,18 +1021,13 @@ else:
             unknown_groups = st.session_state.step2_unknown_groups or []
             selected_emotion_local = st.session_state.selected_emotion
 
-            eye_value, ear_value, tail_value, body_value = split_step2_features_by_group(
-                selected_emotion_local, selected_features
-            )
-            behavior_value = (
-                st.session_state.step3_selected_behavior[0]
-                if st.session_state.step3_selected_behavior
-                else None
-            )
+            eye_value, ear_value, tail_value, body_value = split_step2_features_by_group(selected_emotion_local, selected_features)
+            behavior_value = st.session_state.step3_selected_behavior[0] if st.session_state.step3_selected_behavior else None
 
             record = {
                 "annotator_name": annotator_name.strip(),
                 "video_file": current_video_name,
+                "has_primary_emotion": str(final_emotion != "uncertain"),
                 "step1_selected_emotion": selected_emotion_local or "",
                 "step2_眼睛": json.dumps(eye_value, ensure_ascii=False),
                 "step2_耳朵": json.dumps(ear_value, ensure_ascii=False),
@@ -1284,6 +1042,7 @@ else:
                 "final_emotion": final_emotion,
                 "confidence": final_confidence,
                 "step2_summary": step2_result.get("summary", ""),
+                "step3_summary": step3_result.get("summary", ""),
                 "note": note,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
@@ -1299,13 +1058,7 @@ else:
         current_record = build_record(selected_final)
         if current_record is not None:
             if not df_mine.empty and "video_file" in df_mine.columns:
-                preview_df = pd.concat(
-                    [
-                        df_mine[df_mine["video_file"] != current_video_name],
-                        pd.DataFrame([current_record]),
-                    ],
-                    ignore_index=True,
-                )
+                preview_df = pd.concat([df_mine[df_mine["video_file"] != current_video_name], pd.DataFrame([current_record])], ignore_index=True)
             else:
                 preview_df = pd.DataFrame([current_record])
             csv_bytes = preview_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
@@ -1324,11 +1077,7 @@ else:
             )
 
         with c_save:
-            if st.button(
-                "☁️ 儲存並同步 Google Sheet",
-                key=f"save_sync_{st.session_state.current_index}",
-                type="primary",
-            ):
+            if st.button("☁️ 儲存並同步 Google Sheet", key=f"save_sync_{st.session_state.current_index}", type="primary"):
                 record = current_record
                 if record:
                     upsert_annotation(record, annotator_name)
@@ -1339,26 +1088,16 @@ else:
                     except Exception as e:
                         st.warning(f"已保留本次標註資料，下載仍可使用；但同步 Google Sheet 失敗：{e}")
 
-    # ── Navigation ────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
     st.divider()
     col1, col2 = st.columns(2)
     with col1:
-        if st.button(
-            "◀ 上一段",
-            disabled=st.session_state.current_index == 0,
-            use_container_width=True,
-        ):
+        if st.button("◀ 上一段", disabled=st.session_state.current_index == 0, use_container_width=True):
             st.session_state.current_index -= 1
             reset_step_flow()
             st.rerun()
     with col2:
-        if st.button(
-            "下一段 ▶",
-            disabled=st.session_state.current_index >= len(st.session_state.videos) - 1,
-            use_container_width=True,
-            type="primary",
-        ):
+        if st.button("下一段 ▶", disabled=st.session_state.current_index >= len(st.session_state.videos) - 1, use_container_width=True, type="primary"):
             st.session_state.current_index += 1
             reset_step_flow()
             st.rerun()
