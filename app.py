@@ -1,3 +1,4 @@
+
 import json
 import hashlib
 from datetime import datetime
@@ -642,12 +643,15 @@ else:
             if saved_record and saved_record.get("final_emotion") in MAIN_EMOTIONS:
                 st.session_state[selected_emotion_key] = saved_record.get("final_emotion")
             else:
-                st.session_state[selected_emotion_key] = st.session_state.selected_emotion or MAIN_EMOTIONS[0]
+                st.session_state[selected_emotion_key] = None
 
-        current_value = st.session_state.get(selected_emotion_key, MAIN_EMOTIONS[0])
-        current_index = MAIN_EMOTIONS.index(current_value) if current_value in MAIN_EMOTIONS else 0
-
-        selected_emotion = st.radio("請先選擇這段影片的主導情緒", MAIN_EMOTIONS, index=current_index, key=selected_emotion_key)
+        selected_emotion = st.radio(
+            "請先選擇這段影片的主導情緒",
+            MAIN_EMOTIONS,
+            index=MAIN_EMOTIONS.index(st.session_state[selected_emotion_key])
+            if st.session_state[selected_emotion_key] in MAIN_EMOTIONS else None,
+            key=selected_emotion_key,
+        )
 
         if selected_emotion in EMOTION_SCHEMA:
             st.markdown("---")
@@ -809,7 +813,7 @@ else:
                 "final_emotion": final_emotion,
                 "confidence": final_confidence,
                 "step2_summary": step2_result.get("summary", ""),
-                "step3_summary": step3_result.get("summary", ""),
+                
                 "note": note,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
