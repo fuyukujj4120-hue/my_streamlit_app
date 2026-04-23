@@ -102,14 +102,14 @@ st.markdown(
         font-weight: 700 !important;
     }
 
-    /* ── Step 2 & 3: Feature / behavior radios as pills ── */
+    /* ── Step 2 & 3: Feature / behavior radios as pills, 3 per row ── */
     .feature-radio div[data-testid="stRadio"] > div[role="radiogroup"] {
-        display: flex !important;
-        flex-wrap: wrap !important;
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
         gap: 8px !important;
     }
     .feature-radio div[data-testid="stRadio"] label {
-        padding: 6px 14px !important;
+        padding: 8px 14px !important;
         border-radius: 20px !important;
         border: 1.5px solid #d0d0d0 !important;
         background: #fafafa !important;
@@ -119,7 +119,10 @@ st.markdown(
         color: #555 !important;
         transition: all 0.15s ease !important;
         line-height: 1.4 !important;
-        white-space: nowrap !important;
+        text-align: center !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
     .feature-radio div[data-testid="stRadio"] label:hover {
         border-color: #534ab7 !important;
@@ -315,13 +318,12 @@ EMOTION_ICONS = {
 }
 
 ANNOTATION_RULES = [
-    "請先完整觀看，再進行標註",
-    "Step 1 先選 1 個主導情緒",
-    "Step 2 依據該情緒選擇各部位最符合的單一特徵（眼睛、耳朵、尾巴、身體）",
-    "Step 3 再選該情緒下最符合的單一行為特徵",
-    "若某一部位或行為無法觀察，選擇「無法判斷」即可",
-    "若沒有選擇，系統會以 null 記錄",
-    "每段影片僅能標註 1 種主情緒（主導情緒定義為在該片段中出現時間最長且最具代表性的情緒狀態）",
+    ("請先完整觀看，再進行標註", False),
+    ("Step 1 先選 1 個主導情緒", False),
+    ("Step 2 依據該情緒選擇各部位最符合的單一特徵（眼睛、耳朵、尾巴、身體）", False),
+    ("Step 3 再選該情緒下最符合的單一行為特徵", False),
+    ("若某一部位或行為無法觀察，選擇「無法判斷」即可", True),   # bold=True
+    ("每段影片僅能標註 1 種主情緒（主導情緒定義為在該片段中出現時間最長且最具代表性的情緒狀態）", False),
 ]
 
 EMOTION_SCHEMA = {
@@ -353,11 +355,11 @@ EMOTION_SCHEMA = {
             "尾巴": ["垂直", "可能呈倒 U 形"],
             "身體": ["半張開嘴", "拱背", "身體姿勢變化多樣"],
             "行為": [
-                "運動型遊戲：攀爬", "運動型遊戲：奔跑", "社交遊戲：接近其他貓", "社交遊戲：跳躍", "社交遊戲：拍打、撥弄",
-                "社交遊戲：用前肢抓住對方", "社交遊戲：咬對方", "社交遊戲：翻滾或露出腹部", "社交遊戲：扭打",
-                "社交遊戲：踢擊", "社交遊戲：追逐", "社交遊戲：側移或逃跑", "物件遊戲：站立去抓物體",
-                "物件遊戲：拍打物體", "物件遊戲：用爪抓住物體", "物件遊戲：嗅聞、舔舐", "物件遊戲：咬或啃",
-                "物件遊戲：丟擲", "物件遊戲：與物體扭打", "捕獵行為：潛行", "捕獵行為：追逐", "捕獵行為：跳躍", "捕獵行為：撲擊"
+                "攀爬", "奔跑", "接近其他貓", "跳躍", "拍打、撥弄",
+                "用前肢抓住對方", "咬對方", "翻滾或露出腹部", "扭打",
+                "踢擊", "追逐", "側移或逃跑", "站立去抓物體",
+                "拍打物體", "用爪抓住物體", "嗅聞、舔舐", "咬或啃",
+                "丟擲", "與物體扭打", "潛行", "捕獵追逐", "捕獵跳躍", "撲擊"
             ],
         },
     },
@@ -565,15 +567,21 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
     if not selected_emotion:
         return {"emotion": None, "feature_count": 0, "confidence": "低", "summary": "尚未選擇情緒。"}
 
+    # uncertain: features are recorded only, no count-based confidence
+    if selected_emotion == "uncertain":
+        summary = "情緒為 uncertain，特徵只作為紀錄。"
+        if unknown_groups:
+            summary += f"（無法判斷部位：{', '.join(unknown_groups)}）"
+        return {"emotion": selected_emotion, "feature_count": len(selected_features), "confidence": "uncertain", "summary": summary}
+
     feature_count = len(selected_features)
-    label = "（uncertain）" if selected_emotion == "uncertain" else ""
 
     if feature_count >= 2:
-        summary = f"已選擇 2 個以上 Step 2 特徵{label}。"
+        summary = "已選擇 2 個以上 Step 2 特徵。"
     elif feature_count == 1:
-        summary = f"已選擇 1 個 Step 2 特徵{label}。"
+        summary = "已選擇 1 個 Step 2 特徵。"
     else:
-        summary = f"尚未選擇任何 Step 2 特徵{label}。"
+        summary = "尚未選擇任何 Step 2 特徵。"
 
     if unknown_groups:
         summary += f"（無法判斷部位：{', '.join(unknown_groups)}）"
@@ -585,25 +593,30 @@ def evaluate_behavior_support(selected_emotion, step2_result, selected_behavior,
     if not selected_emotion:
         return {"emotion": None, "confidence": "低", "summary": "尚未選擇情緒。", "matched": False}
 
-    feature_count = step2_result.get("feature_count", 0)
     has_behavior = (not unknown_behavior) and len(selected_behavior) > 0
-    prefix = "（uncertain 記錄）" if selected_emotion == "uncertain" else ""
+
+    # uncertain: skip confidence calculation entirely
+    if selected_emotion == "uncertain":
+        summary = "情緒為 uncertain，特徵與行為只作為紀錄。"
+        return {"emotion": selected_emotion, "confidence": "uncertain", "summary": summary, "matched": has_behavior}
+
+    feature_count = step2_result.get("feature_count", 0)
 
     if feature_count >= 2 and has_behavior:
         confidence = "高"
-        summary = f"✅ 信心度：高{prefix}（有任意 2 個 Step 2 特徵 + 行為）"
+        summary = "✅ 信心度：高（有任意 2 個 Step 2 特徵 + 行為）"
     elif feature_count >= 2 and not has_behavior:
         confidence = "中"
-        summary = f"✅ 信心度：中{prefix}（有任意 2 個 Step 2 特徵 + 無行為）"
+        summary = "✅ 信心度：中（有任意 2 個 Step 2 特徵 + 無行為）"
     elif feature_count == 1 and has_behavior:
         confidence = "中"
-        summary = f"✅ 信心度：中{prefix}（有任意 1 個 Step 2 特徵 + 1 行為）"
+        summary = "✅ 信心度：中（有任意 1 個 Step 2 特徵 + 1 行為）"
     elif feature_count == 0 and has_behavior:
         confidence = "低"
-        summary = f"⚠️ 信心度：低{prefix}（有 0 個 Step 2 特徵 + 1 行為）"
+        summary = "⚠️ 信心度：低（有 0 個 Step 2 特徵 + 1 行為）"
     else:
         confidence = "低"
-        summary = f"⚠️ 信心度：低{prefix}（皆未選擇或資訊不足）"
+        summary = "⚠️ 信心度：低（皆未選擇或資訊不足）"
 
     return {"emotion": selected_emotion, "confidence": confidence, "summary": summary, "matched": has_behavior}
 
@@ -929,8 +942,11 @@ with st.sidebar:
 
 if st.session_state.page == "instruction":
     st.subheader("一、標註規則")
-    for i, rule in enumerate(ANNOTATION_RULES, start=1):
-        st.markdown(f"{i}. {rule}")
+    for i, (rule, is_bold) in enumerate(ANNOTATION_RULES, start=1):
+        if is_bold:
+            st.markdown(f"{i}. **{rule}**")
+        else:
+            st.markdown(f"{i}. {rule}")
 
     st.subheader("二、情緒定義與判斷參考")
     for emo_name, emo_item in EMOTION_SCHEMA.items():
@@ -1084,7 +1100,9 @@ else:
         st.session_state.step2_result = auto_result
 
         st.divider()
-        if auto_result["feature_count"] >= 1:
+        if auto_result["confidence"] == "uncertain":
+            st.markdown(f'<div class="ok-box"><b>{auto_result["summary"]}</b></div>', unsafe_allow_html=True)
+        elif auto_result["feature_count"] >= 1:
             st.markdown(f'<div class="ok-box"><b>{auto_result["summary"]}</b></div>', unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="warn-box"><b>{auto_result["summary"]}</b></div>', unsafe_allow_html=True)
@@ -1128,10 +1146,14 @@ else:
         st.session_state.step3_result = auto_result
 
         st.divider()
-        box_class = (
-            "ok-box" if auto_result["confidence"] == "高"
-            else ("warn-box" if auto_result["confidence"] == "中" else "low-box")
-        )
+        if auto_result["confidence"] == "uncertain":
+            box_class = "ok-box"
+        elif auto_result["confidence"] == "高":
+            box_class = "ok-box"
+        elif auto_result["confidence"] == "中":
+            box_class = "warn-box"
+        else:
+            box_class = "low-box"
         st.markdown(f'<div class="{box_class}"><b>{auto_result["summary"]}</b></div>', unsafe_allow_html=True)
 
         c1, c2 = st.columns(2)
@@ -1154,9 +1176,9 @@ else:
         st.markdown("<br>", unsafe_allow_html=True)
 
         # Summary cards
-        conf_color = {"高": "#edf7ed", "中": "#fff8e1", "低": "#fdecea"}
-        conf_border = {"高": "#81c995", "中": "#f0c36d", "低": "#f28b82"}
-        conf_icon = {"高": "✅", "中": "⚠️", "低": "❗"}
+        conf_color = {"高": "#edf7ed", "中": "#fff8e1", "低": "#fdecea", "uncertain": "#f5f4ff"}
+        conf_border = {"高": "#81c995", "中": "#f0c36d", "低": "#f28b82", "uncertain": "#d4d0f5"}
+        conf_icon = {"高": "✅", "中": "⚠️", "低": "❗", "uncertain": "❓"}
         bg = conf_color.get(final_confidence, "#fdecea")
         bd = conf_border.get(final_confidence, "#f28b82")
         ic = conf_icon.get(final_confidence, "❗")
