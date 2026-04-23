@@ -891,7 +891,7 @@ else:
     # ----------------------------
     elif st.session_state.annotation_step == 2:
         selected_emotion = st.session_state.selected_emotion
-        st.markdown(f"## Step 2：選擇「{selected_emotion}」對應的特徵")
+        st.markdown(f"## Step 2：選擇影片中可觀察到的各部位特徵")
 
         if not selected_emotion:
             st.warning("請先完成 Step 1 選擇情緒。")
@@ -920,7 +920,6 @@ else:
             )
 
             selected_core, unknown_core = render_grouped_feature_selector(
-                "### 核心特徵",
                 core_groups,
                 st.session_state.current_index,
                 "step2_core",
@@ -931,7 +930,6 @@ else:
             st.divider()
 
             selected_aux, unknown_aux = render_grouped_feature_selector(
-                "### 次要特徵",
                 aux_groups,
                 st.session_state.current_index,
                 "step2_aux",
@@ -991,7 +989,7 @@ else:
         selected_emotion = st.session_state.selected_emotion
         step2_result = st.session_state.step2_result or {}
 
-        st.markdown(f"## Step 3：選擇「{selected_emotion}」對應的行為")
+        st.markdown(f"## Step 3：選擇影片中可觀察到的行為")
 
         if not selected_emotion:
             st.warning("請先完成前面步驟。")
