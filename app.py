@@ -101,8 +101,8 @@ video_names = [
 
 VIDEOS = [{"name": name, "url": f"{BASE_URL}{name}"} for name in video_names]
 
-OUTPUT_DIR = Path("annotations")
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = Path(__file__).resolve().parent / "annotations"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MAIN_EMOTIONS = ["害怕", "憤怒/狂怒", "歡樂/玩耍", "滿意", "興趣", "uncertain"]
 FEATURE_GROUPS = ["眼睛", "耳朵", "尾巴", "身體", "行為"]
@@ -450,7 +450,8 @@ def render_grouped_feature_selector(
     saved_values: dict,
     saved_unknown_groups: dict,
 ):
-    st.markdown(title)
+    if title:
+        st.markdown(title)
     selected = []
     unknown_groups = []
 
@@ -581,8 +582,7 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
     if selected_emotion == "uncertain":
         return {
             "emotion": "uncertain",
-            "core_count": 0,
-            "aux_count": 0,
+            "matched_count": 0,
             "selected_count": 0,
             "confidence": "低等",
             "summary": "已選擇 uncertain，特徵步驟僅作記錄。",
@@ -591,35 +591,29 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
     if not selected_emotion or selected_emotion not in EMOTION_SCHEMA:
         return {
             "emotion": None,
-            "core_count": 0,
-            "aux_count": 0,
+            "matched_count": 0,
             "selected_count": 0,
             "confidence": "低等",
             "summary": "尚未選擇情緒。",
         }
 
     item = EMOTION_SCHEMA[selected_emotion]
-    core_pool = set()
-    aux_pool = set()
+    feature_pool = set()
     for group, feats in item["core_features"].items():
-        core_pool.update(feats)
+        feature_pool.update(feats)
     for group, feats in item["aux_features"].items():
         if group != "行為":
-            aux_pool.update(feats)
+            feature_pool.update(feats)
 
-    core_count = sum(1 for f in selected_features if f in core_pool)
-    aux_count = sum(1 for f in selected_features if f in aux_pool)
+    matched_count = sum(1 for f in selected_features if f in feature_pool)
     selected_count = len(selected_features)
 
-    if core_count >= 2:
+    if matched_count >= 3:
         confidence = "中等"
-        summary = "✅ 已有 2 個以上核心特徵支持此情緒。"
-    elif core_count >= 1 and aux_count >= 1:
-        confidence = "中等"
-        summary = "✅ 已有 1 個核心特徵 + 1 個次要特徵支持此情緒。"
-    elif selected_count >= 1:
+        summary = "✅ 已有 3 個以上特徵支持此情緒。"
+    elif matched_count >= 1:
         confidence = "低等"
-        summary = "⚠️ 已選情緒，但目前特徵支持仍偏弱。"
+        summary = "⚠️ 已有部分特徵支持此情緒，但支持度仍偏弱。"
     else:
         confidence = "低等"
         summary = "⚠️ 尚未勾選任何可支持此情緒的特徵。"
@@ -629,8 +623,7 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
 
     return {
         "emotion": selected_emotion,
-        "core_count": core_count,
-        "aux_count": aux_count,
+        "matched_count": matched_count,
         "selected_count": selected_count,
         "confidence": confidence,
         "summary": summary,
@@ -737,6 +730,7 @@ with st.sidebar:
     st.write(f"目前影片數：{len(st.session_state.videos)}")
     st.write(f"目前索引：{st.session_state.current_index + 1 if st.session_state.videos else 0}")
     st.write(f"已完成：{st.session_state.completed}")
+    st.caption(f"本機儲存位置：{OUTPUT_DIR}")
 
     annotator_name = st.text_input(
         "標註者姓名 / 編號",
@@ -810,6 +804,7 @@ else:
         if output_path.exists():
             df = pd.read_csv(output_path)
             st.dataframe(df, use_container_width=True)
+            st.caption(f"本機儲存位置：{output_path}")
             st.download_button(
                 "下載標註結果 CSV",
                 data=df.to_csv(index=False).encode("utf-8-sig"),
@@ -881,7 +876,7 @@ else:
                 go_to_instruction()
 
         with c2:
-            if st.button("繼續 → Step 2", key=f"step1_next_{st.session_state.current_index}", disabled=not selected_emotion):
+            if st.button("繼續 → Step 2", key=f"step1_next_{st.session_state.current_index}", disabled=(selected_emotion is None)):
                 st.session_state.selected_emotion = selected_emotion
                 st.session_state.annotation_step = 2
                 st.rerun()
@@ -891,7 +886,7 @@ else:
     # ----------------------------
     elif st.session_state.annotation_step == 2:
         selected_emotion = st.session_state.selected_emotion
-        st.markdown(f"## Step 2：選擇影片中可觀察到的各部位特徵")
+        st.markdown("## Step 2：選擇影片中可觀察到的特徵")
 
         if not selected_emotion:
             st.warning("請先完成 Step 1 選擇情緒。")
@@ -913,32 +908,21 @@ else:
 
         else:
             core_groups, aux_groups, _ = get_emotion_feature_groups(selected_emotion)
+            all_groups = {**core_groups, **aux_groups}
 
             default_values, default_unknown = build_saved_selection_map(
                 st.session_state.step2_selected_features,
                 st.session_state.step2_unknown_groups,
             )
 
-            selected_core, unknown_core = render_grouped_feature_selector(
-                core_groups,
+            selected_features, unknown_groups = render_grouped_feature_selector(
+                "",
+                all_groups,
                 st.session_state.current_index,
-                "step2_core",
+                "step2_all",
                 default_values,
                 default_unknown,
             )
-
-            st.divider()
-
-            selected_aux, unknown_aux = render_grouped_feature_selector(
-                aux_groups,
-                st.session_state.current_index,
-                "step2_aux",
-                default_values,
-                default_unknown,
-            )
-
-            selected_features = selected_core + selected_aux
-            unknown_groups = unknown_core + unknown_aux
 
             st.divider()
             c1, c2, c3 = st.columns(3)
@@ -1233,7 +1217,8 @@ else:
                     df_mine = load_existing_annotations(annotator_name)
                     if not df_mine.empty:
                         csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                        st.download_button(
+                        st.caption(f"本機儲存位置：{output_path}")
+            st.download_button(
                             label="⬇️ 下載我的標註 CSV",
                             data=csv_bytes,
                             file_name=f"annotations_{annotator_name.strip()}.csv",
@@ -1253,9 +1238,9 @@ else:
                             st.session_state.completed = len(load_existing_annotations(annotator_name))
                             try:
                                 append_to_google_sheet(record, annotator_name)
-                                st.success("✅ 已儲存到本地，並同步到 Google Sheet。")
+                                st.success(f"✅ 已儲存到本地：{output_path}，並同步到 Google Sheet。")
                             except Exception as e:
-                                st.warning(f"本地已儲存，但同步 Google Sheet 失敗：{e}")
+                                st.warning(f"本地已儲存：{output_path}，但同步 Google Sheet 失敗：{e}")
                             st.session_state[confirm_key] = None
 
     st.divider()
