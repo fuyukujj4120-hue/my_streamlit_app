@@ -29,14 +29,6 @@ st.markdown(
         display: block !important;
         margin: 0 auto !important;
     }
-    .result-box {
-        padding: 12px 14px;
-        border-radius: 10px;
-        background: #eef6ff;
-        border: 1px solid #b6d4fe;
-        margin-top: 8px;
-        margin-bottom: 12px;
-    }
     .warn-box {
         padding: 12px 14px;
         border-radius: 10px;
@@ -58,14 +50,6 @@ st.markdown(
         border-radius: 10px;
         background: #fdecea;
         border: 1px solid #f28b82;
-        margin-top: 8px;
-        margin-bottom: 12px;
-    }
-    .conflict-box {
-        padding: 12px 14px;
-        border-radius: 10px;
-        background: #f3e5f5;
-        border: 1px solid #ce93d8;
         margin-top: 8px;
         margin-bottom: 12px;
     }
@@ -101,9 +85,6 @@ video_names = [
 
 VIDEOS = [{"name": name, "url": f"{BASE_URL}{name}"} for name in video_names]
 
-OUTPUT_DIR = Path(__file__).resolve().parent / "annotations"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
 MAIN_EMOTIONS = ["害怕", "憤怒/狂怒", "歡樂/玩耍", "滿意", "興趣", "uncertain"]
 FEATURE_GROUPS = ["眼睛", "耳朵", "尾巴", "身體", "行為"]
 
@@ -119,7 +100,7 @@ ANNOTATION_RULES = [
 EMOTION_SCHEMA = {
     "害怕": {
         "definition": "fear",
-        "core_features": {
+        "features": {
             "眼睛": [
                 "雙眼睜大",
                 "瞳孔呈圓形且散大",
@@ -134,8 +115,6 @@ EMOTION_SCHEMA = {
                 "耳廓不可見",
                 "背面壓平",
             ],
-        },
-        "aux_features": {
             "尾巴": [
                 "夾在身體下方",
                 "或繞在身體旁",
@@ -160,7 +139,7 @@ EMOTION_SCHEMA = {
     },
     "憤怒/狂怒": {
         "definition": "憤怒/狂怒",
-        "core_features": {
+        "features": {
             "眼睛": [
                 "瞳孔呈橢圓形且散大",
                 "直視",
@@ -169,8 +148,6 @@ EMOTION_SCHEMA = {
                 "向側面旋轉",
                 "可見內耳廓",
             ],
-        },
-        "aux_features": {
             "尾巴": [
                 "壓低且僵硬",
                 "呈倒 L 形",
@@ -193,7 +170,7 @@ EMOTION_SCHEMA = {
     },
     "歡樂/玩耍": {
         "definition": "歡樂/玩耍",
-        "core_features": {
+        "features": {
             "眼睛": [
                 "瞳孔因興奮而放大/變圓",
                 "瞳孔放鬆/變軟",
@@ -201,8 +178,6 @@ EMOTION_SCHEMA = {
             "耳朵": [
                 "直立且面向前方",
             ],
-        },
-        "aux_features": {
             "尾巴": [
                 "垂直",
                 "可能呈倒 U 形",
@@ -241,7 +216,7 @@ EMOTION_SCHEMA = {
     },
     "滿意": {
         "definition": "滿意",
-        "core_features": {
+        "features": {
             "眼睛": [
                 "瞳孔呈小的縮瞳狀垂直卵圓形",
                 "半睜",
@@ -249,8 +224,6 @@ EMOTION_SCHEMA = {
             "耳朵": [
                 "直立且面向前方",
             ],
-        },
-        "aux_features": {
             "尾巴": [
                 "放鬆且靜止狀態",
                 "輕微彎曲",
@@ -275,7 +248,7 @@ EMOTION_SCHEMA = {
     },
     "興趣": {
         "definition": "興趣",
-        "core_features": {
+        "features": {
             "眼睛": [
                 "瞳孔放大/呈圓形",
                 "目光向右",
@@ -284,8 +257,6 @@ EMOTION_SCHEMA = {
                 "耳朵直立並朝向刺激物",
                 "耳朵輕微抖動",
             ],
-        },
-        "aux_features": {
             "尾巴": [
                 "水平",
                 "豎起",
@@ -329,13 +300,7 @@ def show_emotion_dialog(emotion_name: str):
     if img_path and img_path.exists():
         st.image(str(img_path), use_container_width=True)
     st.write(f"**定義：** {item['definition']}")
-    st.markdown("### 核心特徵")
-    for grp, opts in item["core_features"].items():
-        st.markdown(f"**{grp}**")
-        for opt in opts:
-            st.markdown(f"- {opt}")
-    st.markdown("### 次要 / 輔助特徵")
-    for grp, opts in item["aux_features"].items():
+    for grp, opts in item["features"].items():
         st.markdown(f"**{grp}**")
         for opt in opts:
             st.markdown(f"- {opt}")
@@ -366,45 +331,43 @@ def get_video_name(video_item: dict):
     return video_item["name"]
 
 
-def get_annotation_file(annotator_name: str):
-    safe_name = annotator_name.strip() if annotator_name.strip() else "anonymous"
-    return OUTPUT_DIR / f"annotations_{safe_name}.csv"
-
-
 def compute_record_id(annotator_name: str, video_name: str):
     raw = f"{annotator_name}::{video_name}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
-def load_existing_annotations(annotator_name: str):
-    output_path = get_annotation_file(annotator_name)
-    if output_path.exists():
-        return pd.read_csv(output_path)
-    return pd.DataFrame()
-
-
-def upsert_annotation(record: dict, annotator_name: str):
-    output_path = get_annotation_file(annotator_name)
-    df_old = load_existing_annotations(annotator_name)
-    df_new = pd.DataFrame([record])
-
-    if not df_old.empty and "record_id" in df_old.columns:
-        df_old = df_old[df_old["record_id"] != record["record_id"]]
-        df_all = pd.concat([df_old, df_new], ignore_index=True)
-    else:
-        df_all = df_new if df_old.empty else pd.concat([df_old, df_new], ignore_index=True)
-
-    df_all.to_csv(output_path, index=False, encoding="utf-8-sig")
+def get_annotations_store():
+    if "annotations_store" not in st.session_state:
+        st.session_state["annotations_store"] = {}
+    return st.session_state["annotations_store"]
 
 
 def get_saved_record(annotator_name: str, video_name: str):
-    df = load_existing_annotations(annotator_name)
-    if df.empty or "video_file" not in df.columns:
+    if not annotator_name:
         return None
-    matched = df[df["video_file"] == video_name]
-    if matched.empty:
-        return None
-    return matched.iloc[-1].to_dict()
+    store = get_annotations_store()
+    key = f"{annotator_name.strip()}::{video_name}"
+    return store.get(key)
+
+
+def upsert_annotation(record: dict, annotator_name: str):
+    store = get_annotations_store()
+    key = f"{annotator_name.strip()}::{record['video_file']}"
+    store[key] = record
+
+
+def get_annotations_df(annotator_name: str):
+    if not annotator_name:
+        return pd.DataFrame()
+    store = get_annotations_store()
+    prefix = f"{annotator_name.strip()}::"
+    rows = [v for k, v in store.items() if k.startswith(prefix)]
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    if "timestamp" in df.columns:
+        df = df.sort_values("timestamp")
+    return df
 
 
 def render_definition_block(emotion_name: str, item: dict):
@@ -413,27 +376,19 @@ def render_definition_block(emotion_name: str, item: dict):
         if img_path and img_path.exists():
             st.image(str(img_path), use_container_width=True)
         st.write(f"**定義：** {item['definition']}")
-        st.write("**核心特徵**")
-        for grp, opts in item["core_features"].items():
+        for grp, opts in item["features"].items():
             st.markdown(f"- **{grp}**")
-            for i, opt in enumerate(opts, start=1):
-                st.markdown(f"  - {chr(64 + i)}. {opt}")
-        st.write("**次要特徵 / 輔助特徵**")
-        for grp, opts in item["aux_features"].items():
-            st.markdown(f"- **{grp}**")
-            for i, opt in enumerate(opts, start=1):
-                st.markdown(f"  - {chr(64 + i)}. {opt}")
+            for opt in opts:
+                st.markdown(f"  - {opt}")
 
 
 def get_emotion_feature_groups(emotion_name: str):
     if emotion_name not in EMOTION_SCHEMA:
-        return {}, {}, []
+        return {}, []
     item = EMOTION_SCHEMA[emotion_name]
-    core = item["core_features"]
-    aux = item["aux_features"]
-    behavior = aux.get("行為", [])
-    aux_no_behavior = {k: v for k, v in aux.items() if k != "行為"}
-    return core, aux_no_behavior, behavior
+    all_features = {k: v for k, v in item["features"].items() if k != "行為"}
+    behavior = item["features"].get("行為", [])
+    return all_features, behavior
 
 
 def build_saved_selection_map(selected_values, unknown_groups=None):
@@ -452,6 +407,7 @@ def render_grouped_feature_selector(
 ):
     if title:
         st.markdown(title)
+
     selected = []
     unknown_groups = []
 
@@ -506,8 +462,7 @@ def render_grouped_feature_selector(
 
 def reset_feature_widget_state(video_index: int):
     prefixes = [
-        f"step2_core_{video_index}_",
-        f"step2_aux_{video_index}_",
+        f"step2_all_{video_index}_",
         f"step3_behavior_{video_index}_",
     ]
     keys_to_delete = [
@@ -597,12 +552,9 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
             "summary": "尚未選擇情緒。",
         }
 
-    item = EMOTION_SCHEMA[selected_emotion]
     feature_pool = set()
-    for group, feats in item["core_features"].items():
-        feature_pool.update(feats)
-    for group, feats in item["aux_features"].items():
-        if group != "行為":
+    for _, feats in EMOTION_SCHEMA[selected_emotion]["features"].items():
+        if _ != "行為":
             feature_pool.update(feats)
 
     matched_count = sum(1 for f in selected_features if f in feature_pool)
@@ -610,10 +562,10 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
 
     if matched_count >= 3:
         confidence = "中等"
-        summary = "✅ 已有 3 個以上特徵支持此情緒。"
+        summary = "✅ 已有多個特徵支持此情緒。"
     elif matched_count >= 1:
         confidence = "低等"
-        summary = "⚠️ 已有部分特徵支持此情緒，但支持度仍偏弱。"
+        summary = "⚠️ 已有部分特徵支持此情緒。"
     else:
         confidence = "低等"
         summary = "⚠️ 尚未勾選任何可支持此情緒的特徵。"
@@ -656,7 +608,7 @@ def evaluate_behavior_support(selected_emotion, step2_result, selected_behavior,
         }
 
     behavior = selected_behavior[0]
-    behavior_pool = set(EMOTION_SCHEMA[selected_emotion]["aux_features"].get("行為", []))
+    behavior_pool = set(EMOTION_SCHEMA[selected_emotion]["features"].get("行為", []))
     matched = behavior in behavior_pool
 
     if matched:
@@ -694,6 +646,8 @@ def init_session(videos):
         "step3_result": None,
         "loaded_saved_record_video": None,
         "inconsistency_confirm": None,
+        "annotations_store": {},
+        "last_download_ready": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -730,7 +684,6 @@ with st.sidebar:
     st.write(f"目前影片數：{len(st.session_state.videos)}")
     st.write(f"目前索引：{st.session_state.current_index + 1 if st.session_state.videos else 0}")
     st.write(f"已完成：{st.session_state.completed}")
-    st.caption(f"本機儲存位置：{OUTPUT_DIR}")
 
     annotator_name = st.text_input(
         "標註者姓名 / 編號",
@@ -772,7 +725,6 @@ with st.sidebar:
             ):
                 show_emotion_dialog(emotion_name)
 
-
 if st.session_state.page == "instruction":
     st.subheader("一、標註規則")
     for i, rule in enumerate(ANNOTATION_RULES, start=1):
@@ -783,9 +735,10 @@ if st.session_state.page == "instruction":
         render_definition_block(emo_name, emo_item)
 
     st.info("請先完整閱讀以上規則與定義，再開始標註。")
-    start_disabled = (not annotator_name) or (len(st.session_state.videos) == 0)
+    start_disabled = (annotator_name.strip() == "") or (len(st.session_state.videos) == 0)
+
     if len(st.session_state.videos) == 0:
-        st.warning("目前找不到影片。請先把影片放進專案根目錄下的 videos/ 資料夾。")
+        st.warning("目前找不到影片。")
 
     if st.button("我已閱讀完畢，開始標註", disabled=start_disabled):
         st.session_state.page = "annotation"
@@ -794,21 +747,19 @@ if st.session_state.page == "instruction":
 
 else:
     if len(st.session_state.videos) == 0:
-        st.error("沒有可標註的影片，請先把影片檔放到 videos/ 資料夾。")
+        st.error("沒有可標註的影片。")
         st.stop()
 
     if st.session_state.current_index >= len(st.session_state.videos):
         st.success("所有影片都標註完成了。")
-        annotator_name = st.session_state.get("annotator_name", "anonymous")
-        output_path = get_annotation_file(annotator_name)
-        if output_path.exists():
-            df = pd.read_csv(output_path)
-            st.dataframe(df, use_container_width=True)
-            st.caption(f"本機儲存位置：{output_path}")
+        df_all = get_annotations_df(annotator_name)
+        if not df_all.empty:
+            st.dataframe(df_all, use_container_width=True)
+            csv_bytes = df_all.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 "下載標註結果 CSV",
-                data=df.to_csv(index=False).encode("utf-8-sig"),
-                file_name=output_path.name,
+                data=csv_bytes,
+                file_name=f"annotations_{annotator_name.strip()}.csv",
                 mime="text/csv",
             )
         st.stop()
@@ -820,7 +771,7 @@ else:
     st.subheader(f"目前影片：{current_video_name}")
 
     if saved_record and st.session_state.annotation_step == 1:
-        st.info("這支影片你已經標過。你可以修改後重新儲存，系統會覆蓋舊資料。")
+        st.info("這支影片你已經標過。你可以修改後重新儲存。")
 
     if saved_record and st.session_state.get("loaded_saved_record_video") != current_video_name:
         reset_feature_widget_state(st.session_state.current_index)
@@ -828,9 +779,6 @@ else:
 
     render_progress_banner()
 
-    # ----------------------------
-    # Step 1：先選情緒
-    # ----------------------------
     if st.session_state.annotation_step == 1:
         st.markdown("## Step 1：先選主導情緒")
 
@@ -841,29 +789,24 @@ else:
             else:
                 st.session_state[selected_emotion_key] = st.session_state.selected_emotion
 
+        current_value = st.session_state.get(selected_emotion_key, MAIN_EMOTIONS[0])
+        current_index = MAIN_EMOTIONS.index(current_value) if current_value in MAIN_EMOTIONS else 0
+
         selected_emotion = st.radio(
             "請先選擇這段影片的主導情緒",
             MAIN_EMOTIONS,
-            index=MAIN_EMOTIONS.index(st.session_state[selected_emotion_key])
-            if st.session_state[selected_emotion_key] in MAIN_EMOTIONS else None,
+            index=current_index,
             key=selected_emotion_key,
         )
 
-        if selected_emotion and selected_emotion in EMOTION_SCHEMA:
+        if selected_emotion in EMOTION_SCHEMA:
             st.markdown("---")
             st.markdown(f"### 你選擇的情緒：{selected_emotion}")
             item = EMOTION_SCHEMA[selected_emotion]
             st.markdown(f"**定義：** {item['definition']}")
 
             with st.expander("查看此情緒的特徵參考", expanded=True):
-                st.markdown("**核心特徵**")
-                for grp, opts in item["core_features"].items():
-                    st.markdown(f"- **{grp}**")
-                    for opt in opts:
-                        st.markdown(f"  - {opt}")
-
-                st.markdown("**次要 / 輔助特徵**")
-                for grp, opts in item["aux_features"].items():
+                for grp, opts in item["features"].items():
                     st.markdown(f"- **{grp}**")
                     for opt in opts:
                         st.markdown(f"  - {opt}")
@@ -876,17 +819,18 @@ else:
                 go_to_instruction()
 
         with c2:
-            if st.button("繼續 → Step 2", key=f"step1_next_{st.session_state.current_index}", disabled=(selected_emotion is None)):
+            if st.button(
+                "繼續 → Step 2",
+                key=f"step1_next_{st.session_state.current_index}",
+                disabled=(selected_emotion is None),
+            ):
                 st.session_state.selected_emotion = selected_emotion
                 st.session_state.annotation_step = 2
                 st.rerun()
 
-    # ----------------------------
-    # Step 2：再選特徵
-    # ----------------------------
     elif st.session_state.annotation_step == 2:
         selected_emotion = st.session_state.selected_emotion
-        st.markdown("## Step 2：選擇影片中可觀察到的特徵")
+        st.markdown("## Step 2：選擇影片中可觀察到的各部位特徵")
 
         if not selected_emotion:
             st.warning("請先完成 Step 1 選擇情緒。")
@@ -895,7 +839,7 @@ else:
             st.stop()
 
         if selected_emotion == "uncertain":
-            st.info("你已選擇 uncertain，因此特徵步驟可略過；若仍想補充，也可以保留空白直接進下一步。")
+            st.info("你已選擇 uncertain，因此特徵步驟可略過。")
             st.session_state.step2_result = evaluate_feature_support("uncertain", [], [])
             c1, c2 = st.columns(2)
             with c1:
@@ -907,8 +851,7 @@ else:
                     st.rerun()
 
         else:
-            core_groups, aux_groups, _ = get_emotion_feature_groups(selected_emotion)
-            all_groups = {**core_groups, **aux_groups}
+            all_groups, _ = get_emotion_feature_groups(selected_emotion)
 
             default_values, default_unknown = build_saved_selection_map(
                 st.session_state.step2_selected_features,
@@ -966,14 +909,11 @@ else:
                     st.session_state.annotation_step = 3
                     st.rerun()
 
-    # ----------------------------
-    # Step 3：再選行為
-    # ----------------------------
     elif st.session_state.annotation_step == 3:
         selected_emotion = st.session_state.selected_emotion
         step2_result = st.session_state.step2_result or {}
 
-        st.markdown(f"## Step 3：選擇影片中可觀察到的行為")
+        st.markdown("## Step 3：選擇影片中可觀察到的行為")
 
         if not selected_emotion:
             st.warning("請先完成前面步驟。")
@@ -981,7 +921,7 @@ else:
                 go_to_step1()
             st.stop()
 
-        _, _, behavior_options = get_emotion_feature_groups(selected_emotion) if selected_emotion in EMOTION_SCHEMA else ({}, {}, [])
+        _, behavior_options = get_emotion_feature_groups(selected_emotion) if selected_emotion in EMOTION_SCHEMA else ({}, [])
 
         behavior_key = f"behavior_single_{st.session_state.current_index}"
         behavior_unknown_key = f"behavior_unknown_{st.session_state.current_index}"
@@ -996,7 +936,7 @@ else:
             st.session_state[behavior_unknown_key] = st.session_state.step3_unknown_behavior
 
         if selected_emotion == "uncertain":
-            st.info("你已選擇 uncertain，行為步驟僅作補充記錄，可直接進入最終確認。")
+            st.info("你已選擇 uncertain，行為步驟可略過。")
             st.session_state.step3_result = evaluate_behavior_support("uncertain", step2_result, [], False)
             c1, c2 = st.columns(2)
             with c1:
@@ -1018,11 +958,12 @@ else:
                 st.session_state[behavior_key] = None
                 selected_behavior = []
             else:
+                default_behavior = st.session_state.get(behavior_key)
+                default_idx = behavior_options.index(default_behavior) if default_behavior in behavior_options else 0
                 selected_behavior_value = st.radio(
                     "請選擇一個最主要的行為特徵",
                     behavior_options,
-                    index=behavior_options.index(st.session_state[behavior_key])
-                    if st.session_state[behavior_key] in behavior_options else None,
+                    index=default_idx if behavior_options else None,
                     key=behavior_key,
                 )
                 selected_behavior = [selected_behavior_value] if selected_behavior_value else []
@@ -1075,9 +1016,6 @@ else:
                     st.session_state.annotation_step = 4
                     st.rerun()
 
-    # ----------------------------
-    # Step 4：最終確認
-    # ----------------------------
     else:
         selected_emotion = st.session_state.selected_emotion
         step2_result = st.session_state.step2_result or {}
@@ -1091,20 +1029,11 @@ else:
         st.markdown(f"- **Step 3 結果：** {step3_result.get('summary', '—')}")
 
         if final_confidence == "高等":
-            st.markdown(
-                '<div class="ok-box"><b>信心程度：高等</b></div>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="ok-box"><b>信心程度：高等</b></div>', unsafe_allow_html=True)
         elif final_confidence == "中等":
-            st.markdown(
-                '<div class="warn-box"><b>信心程度：中等</b></div>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="warn-box"><b>信心程度：中等</b></div>', unsafe_allow_html=True)
         else:
-            st.markdown(
-                '<div class="low-box"><b>信心程度：低等</b></div>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="low-box"><b>信心程度：低等</b></div>', unsafe_allow_html=True)
 
         final_options = ["uncertain"] if selected_emotion == "uncertain" else MAIN_EMOTIONS
         default_index = final_options.index(selected_emotion) if selected_emotion in final_options else 0
@@ -1136,11 +1065,6 @@ else:
 
         st.divider()
 
-        c_back, _ = st.columns([1, 3])
-        with c_back:
-            if st.button("返回上一步", key=f"step4_back_{st.session_state.current_index}"):
-                go_to_step2()
-
         def build_record(final_emotion: str):
             if not annotator_name:
                 st.error("請先在左側輸入標註者姓名或編號。")
@@ -1150,33 +1074,16 @@ else:
                 st.error("請先選擇最終主導情緒。")
                 return None
 
-            selected_emotion_local = st.session_state.selected_emotion
-            if selected_emotion_local in EMOTION_SCHEMA:
-                core_groups, aux_groups, _ = get_emotion_feature_groups(selected_emotion_local)
-                core_selected = [
-                    f for f in st.session_state.step2_selected_features
-                    if any(f in feats for feats in core_groups.values())
-                ]
-                aux_selected = [
-                    f for f in st.session_state.step2_selected_features
-                    if any(f in feats for feats in aux_groups.values())
-                ]
-            else:
-                core_selected = []
-                aux_selected = []
-
             record = {
                 "record_id": compute_record_id(annotator_name.strip(), current_video_name),
                 "video_file": current_video_name,
-                "step1_selected_emotion": selected_emotion_local or "",
+                "step1_selected_emotion": st.session_state.selected_emotion or "",
                 "step2_selected_features": json.dumps(st.session_state.step2_selected_features, ensure_ascii=False),
                 "step2_unknown_groups": json.dumps(st.session_state.step2_unknown_groups, ensure_ascii=False),
-                "step2_core_selected": json.dumps(core_selected, ensure_ascii=False),
-                "step2_aux_selected": json.dumps(aux_selected, ensure_ascii=False),
                 "step3_selected_behavior": json.dumps(st.session_state.step3_selected_behavior, ensure_ascii=False),
                 "step3_unknown_behavior": str(st.session_state.step3_unknown_behavior),
                 "final_emotion": final_emotion,
-                "final_matches_step1": str(final_emotion == (selected_emotion_local or "")),
+                "final_matches_step1": str(final_emotion == (st.session_state.selected_emotion or "")),
                 "confidence": final_confidence,
                 "step2_summary": step2_result.get("summary", ""),
                 "step3_summary": step3_result.get("summary", ""),
@@ -1192,11 +1099,7 @@ else:
         if st.session_state.get(confirm_key) == "pending":
             st.markdown("---")
             st.markdown(
-                f'<div class="warn-box">'
-                f'<b>⚠️ 標註不一致確認</b><br>'
-                f'{inconsistency_msg}<br><br>'
-                f'請確認你的標註是否正確？'
-                f'</div>',
+                f'<div class="warn-box"><b>⚠️ 標註不一致確認</b><br>{inconsistency_msg}<br><br>請確認你的標註是否正確？</div>',
                 unsafe_allow_html=True,
             )
             c1, c2 = st.columns(2)
@@ -1208,26 +1111,14 @@ else:
                 if st.button("❌ 否，重新標註", use_container_width=True, key=f"confirm_no_{st.session_state.current_index}"):
                     st.session_state[confirm_key] = None
                     go_to_step1()
-
         else:
-            c1, c2 = st.columns(2)
+            c_back, c_save = st.columns(2)
 
-            with c1:
-                if annotator_name:
-                    df_mine = load_existing_annotations(annotator_name)
-                    if not df_mine.empty:
-                        csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                        current_output_path = get_annotation_file(annotator_name)
-                        st.caption(f"本機儲存位置：{current_output_path}")
-                        st.download_button(
-                            label="⬇️ 下載我的標註 CSV",
-                            data=csv_bytes,
-                            file_name=f"annotations_{annotator_name.strip()}.csv",
-                            mime="text/csv",
-                            help="只包含你自己的標註資料",
-                        )
+            with c_back:
+                if st.button("返回上一步", key=f"step4_back_{st.session_state.current_index}"):
+                    go_to_step2()
 
-            with c2:
+            with c_save:
                 if st.button("☁️ 儲存並同步 Google Sheet", key=f"save_sync_{st.session_state.current_index}"):
                     if inconsistency_msg and st.session_state[confirm_key] != "confirmed":
                         st.session_state[confirm_key] = "pending"
@@ -1236,13 +1127,34 @@ else:
                         record = build_record(selected_final)
                         if record:
                             upsert_annotation(record, annotator_name)
-                            st.session_state.completed = len(load_existing_annotations(annotator_name))
+                            st.session_state.completed = len(get_annotations_df(annotator_name))
+                            st.session_state.last_download_ready = True
+
                             try:
                                 append_to_google_sheet(record, annotator_name)
-                                st.success(f"✅ 已儲存到本地：{output_path}，並同步到 Google Sheet。")
+                                st.success("✅ 已同步到 Google Sheet，並可下載到你的電腦。")
                             except Exception as e:
-                                st.warning(f"本地已儲存：{output_path}，但同步 Google Sheet 失敗：{e}")
+                                st.warning(f"已保留本次標註資料，下載仍可使用；但同步 Google Sheet 失敗：{e}")
+
                             st.session_state[confirm_key] = None
+
+        st.markdown("---")
+        st.markdown("### 下載到你的電腦")
+
+        if annotator_name:
+            df_mine = get_annotations_df(annotator_name)
+            if not df_mine.empty:
+                csv_bytes = df_mine.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+                st.download_button(
+                    label="⬇️ 下載我的標註 CSV",
+                    data=csv_bytes,
+                    file_name=f"annotations_{annotator_name.strip()}.csv",
+                    mime="text/csv",
+                    help="按下後會下載到你自己的電腦",
+                    key=f"download_csv_{st.session_state.current_index}",
+                )
+            else:
+                st.info("目前還沒有可下載的標註資料。請先儲存。")
 
     st.divider()
     col1, col2 = st.columns(2)
