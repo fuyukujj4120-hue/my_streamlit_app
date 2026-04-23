@@ -1,3 +1,4 @@
+
 import json
 import hashlib
 from datetime import datetime
@@ -837,8 +838,7 @@ else:
                 index=radio_index,
                 key=selected_emotion_key,
             )
-            if selected_emotion:
-                st.session_state[selected_emotion_key] = selected_emotion
+          
 
         st.session_state.step1_has_primary_emotion = (selected_emotion != "uncertain") if selected_emotion else None
 
