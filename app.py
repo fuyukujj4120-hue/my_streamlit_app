@@ -1,3 +1,4 @@
+
 import json
 import hashlib
 from datetime import datetime
@@ -482,6 +483,10 @@ def load_annotations_from_google_sheet(annotator_name: str):
     """
     從 Google Sheet 讀取某位標註者已完成的紀錄。
     需要 Apps Script 端支援 doGet(action=get_by_annotator)。
+
+    如果 Apps Script 沒有部署成 Web App、權限不是 Anyone，
+    或網址不是 /exec，Google 可能會回傳 HTML 而不是 JSON。
+    這裡會把前 500 字錯誤內容顯示出來，方便除錯。
     """
     if not annotator_name or not annotator_name.strip():
         return []
@@ -493,8 +498,20 @@ def load_annotations_from_google_sheet(annotator_name: str):
     }
 
     resp = requests.get(SHEET_WEBHOOK_URL, params=params, timeout=20)
-    resp.raise_for_status()
-    data = resp.json()
+
+    if resp.status_code != 200:
+        raise ValueError(f"HTTP {resp.status_code}：{resp.text[:500]}")
+
+    if not resp.text or not resp.text.strip():
+        raise ValueError("Google Apps Script 回傳空白內容，請確認 doGet 已部署為 Web App。")
+
+    try:
+        data = resp.json()
+    except Exception:
+        raise ValueError(
+            "Google Apps Script 回傳的不是 JSON。請檢查 Web App 部署權限與網址是否為 /exec。\n"
+            "回傳內容前 500 字：\n" + resp.text[:500]
+        )
 
     if not data.get("ok"):
         raise ValueError(data.get("error", "Unknown Google Sheet read error"))
@@ -1416,4 +1433,3 @@ else:
             st.session_state.current_index += 1
             reset_step_flow()
             st.rerun()
-
