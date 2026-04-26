@@ -478,6 +478,93 @@ def append_to_google_sheet(record: dict, annotator_name: str):
         raise ValueError(data.get("error", "Unknown Google Sheet error"))
 
 
+def load_annotations_from_google_sheet(annotator_name: str):
+    """
+    從 Google Sheet 讀取某位標註者已完成的紀錄。
+    需要 Apps Script 端支援 doGet(action=get_by_annotator)。
+    """
+    if not annotator_name or not annotator_name.strip():
+        return []
+
+    params = {
+        "secret": SHEET_SECRET,
+        "action": "get_by_annotator",
+        "annotator_name": annotator_name.strip(),
+    }
+
+    resp = requests.get(SHEET_WEBHOOK_URL, params=params, timeout=20)
+    resp.raise_for_status()
+    data = resp.json()
+
+    if not data.get("ok"):
+        raise ValueError(data.get("error", "Unknown Google Sheet read error"))
+
+    return data.get("records", [])
+
+
+def sync_google_sheet_records_to_session(annotator_name: str):
+    """
+    將 Google Sheet 中該標註者的紀錄載入 st.session_state["annotations_store"]。
+    如果同一個 video_file 有多筆紀錄，後面讀到的會覆蓋前面讀到的。
+    """
+    records = load_annotations_from_google_sheet(annotator_name)
+
+    for record in records:
+        video_file = str(record.get("video_file", "")).strip()
+        if video_file:
+            record["annotator_name"] = annotator_name.strip()
+            upsert_annotation(record, annotator_name)
+
+    return records
+
+
+def find_first_unfinished_video_index(annotator_name: str):
+    """
+    找到該標註者第一支還沒完成的影片索引。
+    若全部完成，回傳 len(videos)，讓主畫面顯示完成頁。
+    """
+    df = get_annotations_df(annotator_name)
+
+    if df.empty or "video_file" not in df.columns:
+        return 0
+
+    finished_videos = set(df["video_file"].dropna().astype(str).tolist())
+
+    for idx, video in enumerate(st.session_state.videos):
+        video_name = get_video_name(video)
+        if video_name not in finished_videos:
+            return idx
+
+    return len(st.session_state.videos)
+
+
+def load_progress_and_jump(annotator_name: str):
+    """
+    輸入標註者姓名後：
+    1. 從 Google Sheet 讀取此人的標註紀錄
+    2. 寫入本機 session
+    3. 自動跳到第一支尚未完成的影片
+    """
+    name = annotator_name.strip()
+    if not name:
+        return
+
+    records = sync_google_sheet_records_to_session(name)
+    target_index = find_first_unfinished_video_index(name)
+
+    st.session_state["annotator_name"] = name
+    st.session_state["loaded_annotator_name"] = name
+    st.session_state.completed = len(get_annotations_df(name))
+    st.session_state.current_index = target_index
+    st.session_state.page = "annotation"
+    reset_step_flow()
+
+    st.session_state["google_sheet_load_message"] = (
+        f"✅ 已讀取 {name} 的 Google Sheet 紀錄：Google Sheet 原始紀錄 {len(records)} 筆，"
+        f"目前系統判定已完成 {st.session_state.completed} 支影片。"
+    )
+
+
 def load_video_files():
     return VIDEOS
 
@@ -691,6 +778,8 @@ def init_session(videos):
         "loaded_saved_record_video": None,
         "annotations_store": {},
         "feedback_dialog_seen": False,
+        "loaded_annotator_name": "",
+        "google_sheet_load_message": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -921,8 +1010,31 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    annotator_name = st.text_input("👤 標註者姓名 / 編號", value=st.session_state.get("annotator_name", ""), placeholder="請輸入姓名或編號…")
-    st.session_state["annotator_name"] = annotator_name
+    annotator_name = st.text_input(
+        "👤 標註者姓名 / 編號",
+        value=st.session_state.get("annotator_name", ""),
+        placeholder="請輸入姓名或編號…",
+        help="輸入後按 Enter，系統會讀取同名 Google Sheet 紀錄，並跳到第一支尚未完成的影片。",
+    )
+
+    input_name = annotator_name.strip()
+    loaded_name = st.session_state.get("loaded_annotator_name", "").strip()
+
+    if input_name:
+        st.session_state["annotator_name"] = input_name
+
+        if input_name != loaded_name:
+            try:
+                load_progress_and_jump(input_name)
+                st.rerun()
+            except Exception as e:
+                st.session_state["loaded_annotator_name"] = input_name
+                st.warning(f"讀取 Google Sheet 失敗：{e}")
+    else:
+        st.session_state["annotator_name"] = ""
+
+    if st.session_state.get("google_sheet_load_message"):
+        st.success(st.session_state["google_sheet_load_message"])
 
     if st.button("🏠 回到說明頁", use_container_width=True):
         go_to_instruction()
