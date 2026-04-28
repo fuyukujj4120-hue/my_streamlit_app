@@ -1,4 +1,3 @@
-
 import json
 import hashlib
 from datetime import datetime
@@ -1288,10 +1287,29 @@ else:
         selected_emotion = st.session_state.selected_emotion
         step2_result = st.session_state.step2_result or {}
         step3_result = st.session_state.step3_result or {}
-        final_confidence = step3_result.get("confidence") or "低"
 
         st.markdown('<div class="section-title">Step 4：最終確認</div>', unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
+
+        final_options = MAIN_EMOTIONS
+        default_index = final_options.index(selected_emotion) if selected_emotion in final_options else 0
+        selected_final = st.radio(
+            "請再次確認最終主導情緒：",
+            final_options,
+            index=default_index,
+            key=f"final_emotion_radio_{st.session_state.current_index}",
+            horizontal=True,
+        )
+
+        final_confidence = step3_result.get("confidence") or "低"
+
+        # 如果 Step 1 選的情緒與 Step 4 最終情緒不同，強制將信心程度改為「低」
+        if selected_final != selected_emotion:
+            final_confidence = "低"
+            st.markdown(
+                f'<div class="warn-box">⚠️ 和先前情緒不一致：先前為「{selected_emotion}」，目前最終情緒為「{selected_final}」。信心程度已自動改為「低」。</div>',
+                unsafe_allow_html=True,
+            )
 
         conf_color = {"高": "#edf7ed", "中": "#fff8e1", "低": "#fdecea", "uncertain": "#f5f4ff"}
         conf_border = {"高": "#81c995", "中": "#f0c36d", "低": "#f28b82", "uncertain": "#d4d0f5"}
@@ -1325,16 +1343,6 @@ else:
             """,
             unsafe_allow_html=True,
         )
-
-        final_options = MAIN_EMOTIONS
-        default_index = final_options.index(selected_emotion) if selected_emotion in final_options else 0
-        selected_final = st.radio("請再次確認最終主導情緒：", final_options, index=default_index, key=f"final_emotion_radio_{st.session_state.current_index}", horizontal=True)
-
-        if selected_final != selected_emotion:
-            st.markdown(
-                f'<div class="warn-box">⚠️ 和先前情緒不一致：先前為「{selected_emotion}」，目前最終情緒為「{selected_final}」。</div>',
-                unsafe_allow_html=True,
-            )
 
         default_note = saved_record.get("note", "") if saved_record else ""
         note = st.text_area("📝 備註（選填）", value=default_note, height=100, key=f"note_{st.session_state.current_index}", placeholder="可在此輸入補充說明…")
