@@ -351,6 +351,10 @@ VIDEOS = [{"name": name, "url": f"{BASE_URL}{name}"} for name in video_names]
 
 MAIN_EMOTIONS = ["害怕", "憤怒/狂怒", "歡樂/玩耍", "滿意", "興趣", "uncertain"]
 
+UNRECOGNIZABLE_OPTION = "無法辨識"
+OTHER_OPTION = "其他"
+
+
 EMOTION_ICONS = {
     "害怕": "😿",
     "憤怒/狂怒": "😾",
@@ -365,7 +369,7 @@ ANNOTATION_RULES = [
     ("Step 1 先判斷是否有主要情緒；若無主要情緒則強制為 uncertain", False),
     ("Step 2 依據該情緒選擇各部位最符合的單一特徵（眼睛、耳朵、尾巴、身體）", False),
     ("Step 3 再選該情緒下最符合的單一行為特徵", False),
-    ("若某一部位或行為無法觀察，選擇「無法判斷」即可", True),
+    ("若某一部位或行為看不到或畫面不足，選擇「無法辨識」；若有觀察到但不在選項內，選擇「其他」並自行輸入。", True),
     ("影片中若有兩種情緒以上請選擇可以做為主導的情緒 若兩者皆很重要請勾選為無主要情緒", True),
 ]
 
@@ -670,9 +674,11 @@ def get_all_behavior_union():
 def reset_feature_widget_state(video_index: int):
     prefixes = [
         f"step2_single_{video_index}_",
+        f"step2_other_{video_index}_",
         f"step3_behavior_value_{video_index}",
         f"step3_behavior_radio_{video_index}",
         f"step3_behavior_unknown_{video_index}",
+        f"step3_behavior_other_{video_index}",
         f"step1_no_primary_{video_index}",
         f"step1_emotion_{video_index}",
     ]
@@ -693,10 +699,13 @@ def reset_step_flow():
     st.session_state.selected_emotion = None
     st.session_state.step1_has_primary_emotion = None
     st.session_state.step2_selected_features = []
+    st.session_state.step2_selected_by_group = {}
     st.session_state.step2_unknown_groups = []
+    st.session_state.step2_other_inputs = {}
     st.session_state.step2_result = None
     st.session_state.step3_selected_behavior = []
     st.session_state.step3_unknown_behavior = False
+    st.session_state.step3_other_behavior = ""
     st.session_state.step3_result = None
     st.session_state.loaded_saved_record_video = None
     reset_feature_widget_state(video_index)
@@ -714,6 +723,7 @@ def go_to_step1():
     st.session_state.step2_result = None
     st.session_state.step3_selected_behavior = []
     st.session_state.step3_unknown_behavior = False
+    st.session_state.step3_other_behavior = ""
     st.session_state.step3_result = None
     clear_step4_state(st.session_state.current_index)
     st.rerun()
@@ -733,7 +743,7 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
     if selected_emotion == "uncertain":
         summary = "情緒為 uncertain，特徵只作為紀錄。"
         if unknown_groups:
-            summary += f"（無法判斷部位：{', '.join(unknown_groups)}）"
+            summary += f"（無法辨識部位：{', '.join(unknown_groups)}）"
         return {"emotion": selected_emotion, "feature_count": len(selected_features), "confidence": "uncertain", "summary": summary}
 
     feature_count = len(selected_features)
@@ -745,7 +755,7 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
         summary = "尚未選擇任何 Step 2 特徵。"
 
     if unknown_groups:
-        summary += f"（無法判斷部位：{', '.join(unknown_groups)}）"
+        summary += f"（無法辨識部位：{', '.join(unknown_groups)}）"
     return {"emotion": selected_emotion, "feature_count": feature_count, "confidence": "低", "summary": summary}
 
 
@@ -788,10 +798,13 @@ def init_session(videos):
         "selected_emotion": None,
         "step1_has_primary_emotion": None,
         "step2_selected_features": [],
+        "step2_selected_by_group": {},
         "step2_unknown_groups": [],
+        "step2_other_inputs": {},
         "step2_result": None,
         "step3_selected_behavior": [],
         "step3_unknown_behavior": False,
+        "step3_other_behavior": "",
         "step3_result": None,
         "loaded_saved_record_video": None,
         "annotations_store": {},
@@ -852,42 +865,65 @@ def render_progress_banner():
 
 def load_saved_step2_group_choices(saved_record):
     if not saved_record:
-        return {}
+        return {}, {}
+
     mapping = {}
+    other_mapping = {}
     for group_name in ["眼睛", "耳朵", "尾巴", "身體"]:
         selected_raw = saved_record.get(f"step2_{group_name}", "null")
         try:
             selected_value = json.loads(selected_raw) if selected_raw not in ["", None] else None
         except Exception:
             selected_value = None
-        unknown_flag = str(saved_record.get(f"step2_{group_name}_無法判斷", "False")) == "True"
-        mapping[group_name] = "無法判斷" if unknown_flag else selected_value
-    return mapping
 
+        old_unknown_flag = str(saved_record.get(f"step2_{group_name}_無法判斷", "False")) == "True"
+        unrecognizable_flag = str(saved_record.get(f"step2_{group_name}_無法辨識", "False")) == "True"
+        other_value = str(saved_record.get(f"step2_{group_name}_其他", "") or "").strip()
+
+        if other_value:
+            mapping[group_name] = OTHER_OPTION
+            other_mapping[group_name] = other_value
+        elif unrecognizable_flag or old_unknown_flag:
+            mapping[group_name] = UNRECOGNIZABLE_OPTION
+        else:
+            mapping[group_name] = selected_value
+
+    return mapping, other_mapping
 
 def load_saved_step3_choice(saved_record):
     if not saved_record:
-        return None, False
-    unknown_flag = str(saved_record.get("step3_unknown_behavior", "False")) == "True"
+        return None, False, ""
+
+    old_unknown_flag = str(saved_record.get("step3_unknown_behavior", "False")) == "True"
+    unrecognizable_flag = str(saved_record.get("step3_behavior_無法辨識", "False")) == "True"
+    other_value = str(saved_record.get("step3_behavior_其他", "") or "").strip()
+
     selected_raw = saved_record.get("step3_selected_behavior", "null")
     try:
         selected_value = json.loads(selected_raw) if selected_raw not in ["", None] else None
     except Exception:
         selected_value = None
-    return selected_value, unknown_flag
 
+    if other_value:
+        return OTHER_OPTION, False, other_value
+    return selected_value, (unrecognizable_flag or old_unknown_flag), ""
 
-def render_single_choice_feature_selector(group_dict, page_index, prefix, saved_choices):
+def render_single_choice_feature_selector(group_dict, page_index, prefix, saved_choices, saved_other_inputs):
     selected_features = []
+    selected_by_group = {}
     unknown_groups = []
+    other_inputs = {}
     groups = list(group_dict.keys())
 
     for idx_group, group_name in enumerate(groups):
-        options = group_dict.get(group_name, []) + ["無法判斷"]
+        options = group_dict.get(group_name, []) + [UNRECOGNIZABLE_OPTION, OTHER_OPTION]
         widget_key = f"{prefix}_{page_index}_{group_name}"
+        other_key = f"step2_other_{page_index}_{group_name}"
 
         if widget_key not in st.session_state:
             st.session_state[widget_key] = saved_choices.get(group_name)
+        if other_key not in st.session_state:
+            st.session_state[other_key] = saved_other_inputs.get(group_name, "")
 
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
@@ -908,30 +944,49 @@ def render_single_choice_feature_selector(group_dict, page_index, prefix, saved_
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
-        if choice == "無法判斷":
+        if choice == UNRECOGNIZABLE_OPTION:
             unknown_groups.append(group_name)
+            selected_by_group[group_name] = None
+        elif choice == OTHER_OPTION:
+            other_text = st.text_input(
+                f"請輸入{group_name}的其他特徵",
+                key=other_key,
+                placeholder=f"例如：輸入觀察到但選項沒有列出的{group_name}特徵…",
+            ).strip()
+            other_inputs[group_name] = other_text
+            selected_by_group[group_name] = other_text if other_text else None
+            if other_text:
+                selected_features.append(other_text)
         elif choice is not None:
+            selected_by_group[group_name] = choice
             selected_features.append(choice)
+        else:
+            selected_by_group[group_name] = None
 
         if idx_group != len(groups) - 1:
             st.markdown('<hr class="group-divider">', unsafe_allow_html=True)
 
-    return selected_features, unknown_groups
+    return selected_features, selected_by_group, unknown_groups, other_inputs
 
-
-def render_single_choice_behavior_selector(options, page_index, saved_behavior, saved_unknown):
+def render_single_choice_behavior_selector(options, page_index, saved_behavior, saved_unknown, saved_other_behavior):
     behavior_value_key = f"step3_behavior_value_{page_index}"
     behavior_radio_key = f"step3_behavior_radio_{page_index}"
     unknown_key = f"step3_behavior_unknown_{page_index}"
+    other_key = f"step3_behavior_other_{page_index}"
 
     if behavior_value_key not in st.session_state:
         st.session_state[behavior_value_key] = saved_behavior
     if unknown_key not in st.session_state:
         st.session_state[unknown_key] = saved_unknown
+    if other_key not in st.session_state:
+        st.session_state[other_key] = saved_other_behavior or ""
     if behavior_radio_key not in st.session_state:
-        st.session_state[behavior_radio_key] = "無法判斷" if saved_unknown else saved_behavior
+        if saved_behavior == OTHER_OPTION:
+            st.session_state[behavior_radio_key] = OTHER_OPTION
+        else:
+            st.session_state[behavior_radio_key] = UNRECOGNIZABLE_OPTION if saved_unknown else saved_behavior
 
-    choices = options + ["無法判斷"]
+    choices = options + [UNRECOGNIZABLE_OPTION, OTHER_OPTION]
 
     st.markdown(
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
@@ -951,15 +1006,26 @@ def render_single_choice_behavior_selector(options, page_index, saved_behavior, 
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
-    if choice == "無法判斷":
+    if choice == UNRECOGNIZABLE_OPTION:
         st.session_state[unknown_key] = True
         st.session_state[behavior_value_key] = None
-        return [], True
+        st.session_state[other_key] = ""
+        return [], True, ""
+
+    if choice == OTHER_OPTION:
+        other_text = st.text_input(
+            "請輸入其他行為特徵",
+            key=other_key,
+            placeholder="例如：輸入觀察到但選項沒有列出的行為…",
+        ).strip()
+        st.session_state[unknown_key] = False
+        st.session_state[behavior_value_key] = other_text if other_text else None
+        return ([other_text] if other_text else []), False, other_text
 
     st.session_state[unknown_key] = False
     st.session_state[behavior_value_key] = choice
-    return [choice] if choice is not None else [], False
-
+    st.session_state[other_key] = ""
+    return [choice] if choice is not None else [], False, ""
 
 def split_step2_features_by_group(selected_emotion_local, selected_features):
     eye_value = None
@@ -1219,13 +1285,21 @@ else:
             st.stop()
 
         all_groups = get_all_step2_groups_union() if selected_emotion == "uncertain" else get_emotion_feature_groups(selected_emotion)[0]
-        saved_choices = load_saved_step2_group_choices(saved_record)
+        saved_choices, saved_other_inputs = load_saved_step2_group_choices(saved_record)
 
-        selected_features, unknown_groups = render_single_choice_feature_selector(all_groups, st.session_state.current_index, "step2_single", saved_choices)
+        selected_features, selected_by_group, unknown_groups, other_inputs = render_single_choice_feature_selector(
+            all_groups,
+            st.session_state.current_index,
+            "step2_single",
+            saved_choices,
+            saved_other_inputs,
+        )
 
         auto_result = evaluate_feature_support(selected_emotion, selected_features, unknown_groups)
         st.session_state.step2_selected_features = selected_features
+        st.session_state.step2_selected_by_group = selected_by_group
         st.session_state.step2_unknown_groups = unknown_groups
+        st.session_state.step2_other_inputs = other_inputs
         st.session_state.step2_result = auto_result
 
         st.divider()
@@ -1258,13 +1332,20 @@ else:
             st.stop()
 
         behavior_options = get_all_behavior_union() if selected_emotion == "uncertain" else get_emotion_feature_groups(selected_emotion)[1]
-        saved_behavior, saved_unknown = load_saved_step3_choice(saved_record)
+        saved_behavior, saved_unknown, saved_other_behavior = load_saved_step3_choice(saved_record)
 
-        selected_behavior, behavior_unknown = render_single_choice_behavior_selector(behavior_options, st.session_state.current_index, saved_behavior, saved_unknown)
+        selected_behavior, behavior_unknown, behavior_other = render_single_choice_behavior_selector(
+            behavior_options,
+            st.session_state.current_index,
+            saved_behavior,
+            saved_unknown,
+            saved_other_behavior,
+        )
 
         auto_result = evaluate_behavior_support(selected_emotion, step2_result, selected_behavior, behavior_unknown)
         st.session_state.step3_selected_behavior = selected_behavior
         st.session_state.step3_unknown_behavior = behavior_unknown
+        st.session_state.step3_other_behavior = behavior_other
         st.session_state.step3_result = auto_result
 
         st.divider()
@@ -1363,8 +1444,13 @@ else:
             unknown_groups = st.session_state.step2_unknown_groups or []
             selected_emotion_local = st.session_state.selected_emotion
 
-            eye_value, ear_value, tail_value, body_value = split_step2_features_by_group(selected_emotion_local, selected_features)
+            selected_by_group = st.session_state.step2_selected_by_group or {}
+            eye_value = selected_by_group.get("眼睛")
+            ear_value = selected_by_group.get("耳朵")
+            tail_value = selected_by_group.get("尾巴")
+            body_value = selected_by_group.get("身體")
             behavior_value = st.session_state.step3_selected_behavior[0] if st.session_state.step3_selected_behavior else None
+            step2_other_inputs = st.session_state.step2_other_inputs or {}
 
             record = {
                 "annotator_name": annotator_name.strip(),
@@ -1375,11 +1461,23 @@ else:
                 "step2_耳朵": json.dumps(ear_value, ensure_ascii=False),
                 "step2_尾巴": json.dumps(tail_value, ensure_ascii=False),
                 "step2_身體": json.dumps(body_value, ensure_ascii=False),
+                "step2_眼睛_無法辨識": str("眼睛" in unknown_groups),
+                "step2_耳朵_無法辨識": str("耳朵" in unknown_groups),
+                "step2_尾巴_無法辨識": str("尾巴" in unknown_groups),
+                "step2_身體_無法辨識": str("身體" in unknown_groups),
+                "step2_眼睛_其他": step2_other_inputs.get("眼睛", ""),
+                "step2_耳朵_其他": step2_other_inputs.get("耳朵", ""),
+                "step2_尾巴_其他": step2_other_inputs.get("尾巴", ""),
+                "step2_身體_其他": step2_other_inputs.get("身體", ""),
+                # 保留舊欄位名稱，避免舊版 Google Sheet 或舊 CSV 讀取失敗。
                 "step2_眼睛_無法判斷": str("眼睛" in unknown_groups),
                 "step2_耳朵_無法判斷": str("耳朵" in unknown_groups),
                 "step2_尾巴_無法判斷": str("尾巴" in unknown_groups),
                 "step2_身體_無法判斷": str("身體" in unknown_groups),
                 "step3_selected_behavior": json.dumps(behavior_value, ensure_ascii=False),
+                "step3_behavior_無法辨識": str(st.session_state.step3_unknown_behavior),
+                "step3_behavior_其他": st.session_state.step3_other_behavior or "",
+                # 保留舊欄位名稱，避免舊版 Google Sheet 或舊 CSV 讀取失敗。
                 "step3_unknown_behavior": str(st.session_state.step3_unknown_behavior),
                 "final_emotion": final_emotion,
                 "confidence": final_confidence,
