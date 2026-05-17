@@ -462,7 +462,9 @@ def show_emotion_dialog(emotion_name: str):
 def show_feedback_dialog():
     st.markdown(
         """
-**無法判斷請細選為無法判讀或是有列表中不包含的特徵(但盡量選列表中包含的內容)**
+   **若有無法判斷請細選(但盡量選列表中包含的內容)**
+   **1.無法判讀**
+   **2.其他(有列表中不包含的特徵)**
 
         """
     )
