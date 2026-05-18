@@ -349,7 +349,9 @@ video_names = [
 ]
 VIDEOS = [{"name": name, "url": f"{BASE_URL}{name}"} for name in video_names]
 
-MAIN_EMOTIONS = ["害怕", "憤怒/狂怒", "歡樂/玩耍", "滿意", "興趣", "uncertain"]
+MAIN_EMOTIONS = ["害怕", "憤怒/狂怒", "歡樂/玩耍", "滿意", "興趣", "中性/其他", "uncertain"]
+NEUTRAL_OTHER_EMOTION = "中性/其他"
+REFERENCE_ONLY_EMOTIONS = ["uncertain", NEUTRAL_OTHER_EMOTION]
 
 UNRECOGNIZABLE_OPTION = "無法辨識"
 OTHER_OPTION = "其他"
@@ -361,14 +363,15 @@ EMOTION_ICONS = {
     "歡樂/玩耍": "😺",
     "滿意": "😽",
     "興趣": "🐾",
+    "中性/其他": "➖",
     "uncertain": "❓",
 }
 
 ANNOTATION_RULES = [
     ("請先完整觀看，再進行標註", False),
-    ("Step 1 先判斷是否有主要情緒；若無主要情緒則強制為 uncertain", False),
-    ("Step 2 依據該情緒選擇各部位最符合的單一特徵（眼睛、耳朵、尾巴、身體）", False),
-    ("Step 3 再選該情緒下最符合的單一行為特徵", False),
+    ("Step 1 先判斷主導情緒；若不是五種基本情緒，可選「中性/其他」；若無主要情緒則勾選無主要情緒並強制為 uncertain。", False),
+    ("Step 2 若選擇五種基本情緒，依據該情緒選擇各部位最符合的單一特徵；若選擇「中性/其他」或 uncertain，則顯示全部特徵，僅作為參考紀錄。", False),
+    ("Step 3 若選擇五種基本情緒，選擇該情緒下最符合的單一行為特徵；若選擇「中性/其他」或 uncertain，則顯示全部行為，僅作為參考紀錄。", False),
     ("若某一部位或行為看不到或畫面不足，選擇「無法判讀」；若有觀察到但不在選項內，選擇「其他」並自行輸入。", True),
     ("影片中若有兩種情緒以上請選擇可以做為主導的情緒 若兩者皆很重要請勾選為無主要情緒", True),
 ]
@@ -738,11 +741,21 @@ def evaluate_feature_support(selected_emotion, selected_features, unknown_groups
     if not selected_emotion:
         return {"emotion": None, "feature_count": 0, "confidence": "低", "summary": "尚未選擇情緒。"}
 
-    if selected_emotion == "uncertain":
-        summary = "情緒為 uncertain，特徵只作為紀錄。"
+    if selected_emotion in REFERENCE_ONLY_EMOTIONS:
+        if selected_emotion == "uncertain":
+            summary = "情緒為 uncertain，Step 2 特徵只作為參考紀錄，不計入信心度判斷。"
+        else:
+            summary = "情緒為中性/其他，Step 2 可選全部特徵，只作為參考紀錄，不計入信心度判斷。"
+
         if unknown_groups:
             summary += f"（無法辨識部位：{', '.join(unknown_groups)}）"
-        return {"emotion": selected_emotion, "feature_count": len(selected_features), "confidence": "uncertain", "summary": summary}
+
+        return {
+            "emotion": selected_emotion,
+            "feature_count": len(selected_features),
+            "confidence": "uncertain",
+            "summary": summary,
+        }
 
     feature_count = len(selected_features)
     if feature_count >= 2:
@@ -763,8 +776,18 @@ def evaluate_behavior_support(selected_emotion, step2_result, selected_behavior,
 
     has_behavior = (not unknown_behavior) and len(selected_behavior) > 0
 
-    if selected_emotion == "uncertain":
-        return {"emotion": selected_emotion, "confidence": "uncertain", "summary": "情緒為 uncertain，特徵與行為只作為紀錄。", "matched": has_behavior}
+    if selected_emotion in REFERENCE_ONLY_EMOTIONS:
+        if selected_emotion == "uncertain":
+            summary = "情緒為 uncertain，Step 2 特徵與 Step 3 行為只作為參考紀錄，不計入信心度判斷。"
+        else:
+            summary = "情緒為中性/其他，Step 2 特徵與 Step 3 行為只作為參考紀錄，不計入信心度判斷。"
+
+        return {
+            "emotion": selected_emotion,
+            "confidence": "uncertain",
+            "summary": summary,
+            "matched": has_behavior,
+        }
 
     feature_count = step2_result.get("feature_count", 0)
     if feature_count >= 2 and has_behavior:
@@ -1099,7 +1122,7 @@ def split_step2_features_by_group(selected_emotion_local, selected_features):
     tail_value = None
     body_value = None
 
-    if selected_emotion_local == "uncertain":
+    if selected_emotion_local in REFERENCE_ONLY_EMOTIONS:
         groups = get_all_step2_groups_union()
     elif selected_emotion_local in EMOTION_SCHEMA:
         groups = {k: v for k, v in EMOTION_SCHEMA[selected_emotion_local]["features"].items() if k != "行為"}
@@ -1320,13 +1343,29 @@ else:
                 """,
                 unsafe_allow_html=True,
             )
-            if selected_emotion != "uncertain":
-                with st.expander("查看此情緒的特徵參考", expanded=True):
-                    for grp, opts in item["features"].items():
-                        st.markdown(f"- **{grp}**")
-                        for opt in opts:
-                            st.markdown(f"  - {opt}")
+            with st.expander("查看此情緒的特徵參考", expanded=True):
+                for grp, opts in item["features"].items():
+                    st.markdown(f"- **{grp}**")
+                    for opt in opts:
+                        st.markdown(f"  - {opt}")
             st.markdown("</div>", unsafe_allow_html=True)
+
+        elif selected_emotion == NEUTRAL_OTHER_EMOTION:
+            st.markdown(
+                """
+                <div style="background:#f5f4ff;border:1.5px solid #d4d0f5;border-radius:14px;
+                padding:16px 20px;margin-top:16px;">
+                    <div style="font-size:20px;font-weight:800;color:#3c3489;margin-bottom:4px;">
+                        ➖ 中性/其他
+                    </div>
+                    <div style="font-size:13px;color:#7366c8;margin-bottom:12px;">
+                        此類別用於不明顯屬於五種基本情緒，或偏中性、休息、日常活動、其他狀態的片段。
+                        下一步會顯示全部特徵與全部行為，僅作為參考紀錄。
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         st.divider()
         c1, c2 = st.columns(2)
@@ -1350,7 +1389,7 @@ else:
                 go_to_step1()
             st.stop()
 
-        all_groups = get_all_step2_groups_union() if selected_emotion == "uncertain" else get_emotion_feature_groups(selected_emotion)[0]
+        all_groups = get_all_step2_groups_union() if selected_emotion in REFERENCE_ONLY_EMOTIONS else get_emotion_feature_groups(selected_emotion)[0]
         saved_choices, saved_other_inputs = load_saved_step2_group_choices(saved_record)
 
         selected_features, selected_by_group, unknown_groups, other_inputs = render_single_choice_feature_selector(
@@ -1397,7 +1436,7 @@ else:
                 go_to_step1()
             st.stop()
 
-        behavior_options = get_all_behavior_union() if selected_emotion == "uncertain" else get_emotion_feature_groups(selected_emotion)[1]
+        behavior_options = get_all_behavior_union() if selected_emotion in REFERENCE_ONLY_EMOTIONS else get_emotion_feature_groups(selected_emotion)[1]
         saved_behavior, saved_unknown, saved_other_behavior = load_saved_step3_choice(saved_record)
 
         selected_behavior, behavior_unknown, behavior_other = render_single_choice_behavior_selector(
@@ -1524,7 +1563,7 @@ else:
             record = {
                 "annotator_name": annotator_name.strip(),
                 "video_file": current_video_name,
-                "has_primary_emotion": str(final_emotion != "uncertain"),
+                "has_primary_emotion": str(final_emotion not in REFERENCE_ONLY_EMOTIONS),
                 "step1_selected_emotion": selected_emotion_local or "",
 
                 # 精簡版儲存：
