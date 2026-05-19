@@ -582,12 +582,6 @@ def load_progress_and_jump(annotator_name: str):
     st.session_state.page = "annotation"
     reset_step_flow()
 
-    # 寫入 URL，避免下一次 rerun / refresh 又回首頁
-    try:
-        save_navigation_to_url()
-    except NameError:
-        pass
-
     st.session_state["google_sheet_load_message"] = (
         f"✅ 已讀取 {name} 的 Google Sheet 紀錄：Google Sheet 原始紀錄 {len(records)} 筆，"
         f"目前系統判定已完成 {st.session_state.completed} 支影片。"
@@ -722,7 +716,6 @@ def reset_step_flow():
 def go_to_instruction():
     st.session_state.page = "instruction"
     reset_step_flow()
-    save_navigation_to_url()
     st.rerun()
 
 
@@ -836,7 +829,7 @@ def init_session(videos):
         "step3_result": None,
         "loaded_saved_record_video": None,
         "annotations_store": {},
-        "feedback_dialog_seen": True,
+        "feedback_dialog_seen": False,
         "loaded_annotator_name": "",
         "google_sheet_load_message": "",
     }
@@ -1154,48 +1147,6 @@ def split_step2_features_by_group(selected_emotion_local, selected_features):
     return eye_value, ear_value, tail_value, body_value
 
 
-
-# ====== 防止 Streamlit rerun / refresh 後一直回首頁的導航狀態工具 ======
-def restore_navigation_from_url():
-    """
-    如果 URL query params 裡有 page / index，重建 session 時優先還原。
-    這可以避免 Streamlit Cloud 重啟、瀏覽器重新整理後直接回到 instruction。
-    """
-    try:
-        page = st.query_params.get("page", None)
-        index = st.query_params.get("index", None)
-    except Exception:
-        return
-
-    if page in ["instruction", "annotation"]:
-        st.session_state.page = page
-
-    try:
-        if index is not None:
-            idx = int(index)
-            if 0 <= idx < len(st.session_state.videos):
-                st.session_state.current_index = idx
-    except Exception:
-        pass
-
-
-def save_navigation_to_url():
-    """把目前頁面與影片索引寫到 URL，讓重新整理後可以回到原位置。"""
-    try:
-        st.query_params["page"] = st.session_state.get("page", "instruction")
-        st.query_params["index"] = str(st.session_state.get("current_index", 0))
-    except Exception:
-        pass
-
-
-def go_to_annotation_page(reset_flow: bool = True):
-    """統一進入標註頁，避免各處直接改 page 後狀態不同步。"""
-    st.session_state.page = "annotation"
-    if reset_flow:
-        reset_step_flow()
-    save_navigation_to_url()
-    st.rerun()
-
 st.markdown(
     f'<h1 style="font-size:28px;font-weight:800;color:#222;margin-bottom:2px;">'
     f'🐱 {APP_TITLE}</h1>'
@@ -1206,13 +1157,9 @@ st.markdown(
 
 videos = load_video_files()
 init_session(videos)
-restore_navigation_from_url()
-save_navigation_to_url()
 
-# 避免 dialog 按鈕造成 st.rerun() 後又回到首頁。
-# 如需再次顯示問題回饋說明，可手動呼叫 show_feedback_dialog()。
-# if not st.session_state.get("feedback_dialog_seen", False):
-#     show_feedback_dialog()
+if not st.session_state.get("feedback_dialog_seen", False):
+    show_feedback_dialog()
 
 with st.sidebar:
     st.markdown('<div style="font-size:17px;font-weight:800;color:#222;margin-bottom:12px;">📊 標註進度</div>', unsafe_allow_html=True)
@@ -1240,32 +1187,24 @@ with st.sidebar:
         "👤 標註者姓名 / 編號",
         value=st.session_state.get("annotator_name", ""),
         placeholder="請輸入姓名或編號…",
-        help="輸入姓名不會自動跳頁；請按下方按鈕讀取進度或開始標註。",
+        help="輸入後按 Enter，系統會讀取同名 Google Sheet 紀錄，並跳到第一支尚未完成的影片。",
     )
 
     input_name = annotator_name.strip()
+    loaded_name = st.session_state.get("loaded_annotator_name", "").strip()
 
     if input_name:
         st.session_state["annotator_name"] = input_name
-    else:
-        st.session_state["annotator_name"] = ""
 
-    c_load, c_start = st.columns(2)
-    with c_load:
-        if st.button("📥 讀取進度", use_container_width=True, disabled=(input_name == "")):
+        if input_name != loaded_name:
             try:
                 load_progress_and_jump(input_name)
-                save_navigation_to_url()
                 st.rerun()
             except Exception as e:
                 st.session_state["loaded_annotator_name"] = input_name
                 st.warning(f"讀取 Google Sheet 失敗：{e}")
-
-    with c_start:
-        if st.button("▶ 直接開始", use_container_width=True, disabled=(input_name == "")):
-            st.session_state.page = "annotation"
-            save_navigation_to_url()
-            st.rerun()
+    else:
+        st.session_state["annotator_name"] = ""
 
     if st.session_state.get("google_sheet_load_message"):
         st.success(st.session_state["google_sheet_load_message"])
@@ -1314,7 +1253,9 @@ if st.session_state.page == "instruction":
         st.warning("目前找不到影片。")
 
     if st.button("✅ 我已閱讀完畢，開始標註", disabled=start_disabled, type="primary"):
-        go_to_annotation_page(reset_flow=True)
+        st.session_state.page = "annotation"
+        reset_step_flow()
+        st.rerun()
 
 else:
     if len(st.session_state.videos) == 0:
@@ -1691,7 +1632,6 @@ else:
         if st.button("◀ 上一段", disabled=st.session_state.current_index == 0, use_container_width=True):
             st.session_state.current_index -= 1
             reset_step_flow()
-            save_navigation_to_url()
             st.rerun()
     with col2:
         if st.button("下一段 ▶", disabled=st.session_state.current_index >= len(st.session_state.videos) - 1, use_container_width=True, type="primary"):
