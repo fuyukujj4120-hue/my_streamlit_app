@@ -461,6 +461,20 @@ def show_emotion_dialog(emotion_name: str):
             st.markdown(f"- {opt}")
 
 
+@st.dialog("問題回饋")
+def show_feedback_dialog():
+    st.markdown(
+        """
+   **若有無法判斷請細選(但盡量選列表中包含的內容)**
+   **1.無法判讀**
+   **2.其他(有列表中不包含的特徵)**
+
+        """
+    )
+    if st.button("我知道了", type="primary"):
+        st.session_state["feedback_dialog_seen"] = True
+        st.rerun()
+
 
 def append_to_google_sheet(record: dict, annotator_name: str):
     payload = {**record, "annotator_name": annotator_name, "secret": SHEET_SECRET}
