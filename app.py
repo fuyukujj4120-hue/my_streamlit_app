@@ -1187,24 +1187,27 @@ with st.sidebar:
         "👤 標註者姓名 / 編號",
         value=st.session_state.get("annotator_name", ""),
         placeholder="請輸入姓名或編號…",
-        help="輸入後按 Enter，系統會讀取同名 Google Sheet 紀錄，並跳到第一支尚未完成的影片。",
+        help="輸入姓名後，請按下方「讀取進度並開始」按鈕，系統才會讀取 Google Sheet 紀錄。",
     )
 
     input_name = annotator_name.strip()
-    loaded_name = st.session_state.get("loaded_annotator_name", "").strip()
 
+    # 只更新標註者名稱，不要在使用者輸入姓名時自動讀取 Google Sheet。
+    # Streamlit 每次輸入框變動都會 rerun；若在這裡自動 load_progress_and_jump()，
+    # 很容易造成畫面一直跳回說明頁或重新跳轉。
     if input_name:
         st.session_state["annotator_name"] = input_name
-
-        if input_name != loaded_name:
-            try:
-                load_progress_and_jump(input_name)
-                st.rerun()
-            except Exception as e:
-                st.session_state["loaded_annotator_name"] = input_name
-                st.warning(f"讀取 Google Sheet 失敗：{e}")
     else:
         st.session_state["annotator_name"] = ""
+
+    if st.button("📥 讀取進度並開始", use_container_width=True, disabled=(input_name == "")):
+        try:
+            load_progress_and_jump(input_name)
+            st.rerun()
+        except Exception as e:
+            # 讀取失敗時不要把 page 改回 instruction，也不要反覆自動重試。
+            st.session_state["loaded_annotator_name"] = input_name
+            st.warning(f"讀取 Google Sheet 失敗：{e}")
 
     if st.session_state.get("google_sheet_load_message"):
         st.success(st.session_state["google_sheet_load_message"])
