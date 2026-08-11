@@ -15,23 +15,41 @@ st.set_page_config(page_title="貓咪情緒標註系統", layout="wide")
 st.markdown(
     """
     <style>
+    :root {
+        --sidebar-width-desktop: 560px;
+    }
+
+    /* -------- 桌機版側邊欄 -------- */
     section[data-testid="stSidebar"] {
-        width: 560px !important;
-        min-width: 560px !important;
+        width: var(--sidebar-width-desktop) !important;
+        min-width: var(--sidebar-width-desktop) !important;
     }
     section[data-testid="stSidebar"] > div {
-        width: 560px !important;
-        min-width: 560px !important;
+        width: var(--sidebar-width-desktop) !important;
+        min-width: var(--sidebar-width-desktop) !important;
     }
     section[data-testid="stSidebar"] video {
-        width: 500px !important;
-        height: 400px !important;
+        width: 100% !important;
+        max-width: 500px !important;
+        height: auto !important;
         object-fit: contain !important;
         background: #000 !important;
         border-radius: 8px !important;
         display: block !important;
         margin: 0 auto !important;
     }
+
+    /* -------- 所有影片（含主畫面）都改用彈性尺寸，手機才不會被切掉 -------- */
+    div[data-testid="stVideo"] video {
+        width: 100% !important;
+        height: auto !important;
+        max-height: 70vh;
+        border-radius: 10px !important;
+        background: #000 !important;
+        display: block !important;
+        margin: 0 auto !important;
+    }
+
     div[data-testid="stRadio"] > label p {
         font-size: 22px !important;
         font-weight: 700 !important;
@@ -55,6 +73,32 @@ st.markdown(
         font-size: 15px !important;
         padding: 10px 18px !important;
         font-weight: 600 !important;
+        width: 100%;
+    }
+
+    /* -------- 手機（窄螢幕）版型調整 -------- */
+    @media (max-width: 768px) {
+        section[data-testid="stSidebar"] {
+            width: 88vw !important;
+            min-width: 260px !important;
+        }
+        section[data-testid="stSidebar"] > div {
+            width: 88vw !important;
+            min-width: 260px !important;
+        }
+        div[data-testid="stRadio"] > label p {
+            font-size: 18px !important;
+        }
+        .section-title {
+            font-size: 19px;
+        }
+        div[data-testid="column"] div[data-testid="stButton"] > button {
+            font-size: 14px !important;
+            padding: 10px 12px !important;
+        }
+        h1 {
+            font-size: 22px !important;
+        }
     }
     </style>
     """,
@@ -962,6 +1006,15 @@ else:
         f'<span style="color:#999;font-weight:400;">{current_video_file}</span></div>',
         unsafe_allow_html=True,
     )
+
+    # -----------------------------------------------------
+    # 主畫面直接播放影片（手機不用開側邊欄也能看）
+    # -----------------------------------------------------
+    st.markdown(
+        '<div class="section-title">觀看影片</div>',
+        unsafe_allow_html=True,
+    )
+    st.video(current_video["url"])
 
     if saved_record:
         st.info("📝 這支影片已經標過，可以修改情緒後重新儲存。")
