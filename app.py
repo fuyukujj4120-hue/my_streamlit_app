@@ -10,94 +10,220 @@ import streamlit as st
 # =========================================================
 # 1. Streamlit 基本設定
 # =========================================================
-st.set_page_config(page_title="貓咪情緒標註系統", layout="wide")
+st.set_page_config(
+    page_title="貓咪情緒標註系統",
+    page_icon="🐱",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
 
+# 手機優先版面：避免固定寬度與左右欄在小螢幕擠壓。
 st.markdown(
     """
     <style>
-    :root {
-        --sidebar-width-desktop: 560px;
+    /* ---------- 整體 ---------- */
+    .stApp {
+        background: #ffffff;
     }
 
-    /* -------- 桌機版側邊欄 -------- */
-    section[data-testid="stSidebar"] {
-        width: var(--sidebar-width-desktop) !important;
-        min-width: var(--sidebar-width-desktop) !important;
+    .block-container {
+        max-width: 760px !important;
+        padding-top: 1rem !important;
+        padding-bottom: 5rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
     }
-    section[data-testid="stSidebar"] > div {
-        width: var(--sidebar-width-desktop) !important;
-        min-width: var(--sidebar-width-desktop) !important;
+
+    h1, h2, h3 {
+        line-height: 1.25 !important;
     }
-    section[data-testid="stSidebar"] video {
+
+    /* ---------- 影片 ---------- */
+    div[data-testid="stVideo"] {
         width: 100% !important;
-        max-width: 500px !important;
-        height: auto !important;
-        object-fit: contain !important;
-        background: #000 !important;
-        border-radius: 8px !important;
-        display: block !important;
         margin: 0 auto !important;
     }
 
-    /* -------- 所有影片（含主畫面）都改用彈性尺寸，手機才不會被切掉 -------- */
     div[data-testid="stVideo"] video {
         width: 100% !important;
-        height: auto !important;
-        max-height: 70vh;
-        border-radius: 10px !important;
+        max-height: 62vh !important;
+        object-fit: contain !important;
         background: #000 !important;
-        display: block !important;
-        margin: 0 auto !important;
+        border-radius: 14px !important;
     }
 
+    /* ---------- 情緒 radio：大尺寸、適合觸控 ---------- */
     div[data-testid="stRadio"] > label p {
-        font-size: 22px !important;
+        font-size: 18px !important;
+        font-weight: 800 !important;
+        margin-bottom: 8px !important;
+    }
+
+    div[data-testid="stRadio"] div[role="radiogroup"] {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 10px !important;
+        width: 100% !important;
+    }
+
+    div[data-testid="stRadio"] div[role="radiogroup"] label {
+        width: 100% !important;
+        min-height: 52px !important;
+        padding: 10px 14px !important;
+        border: 1.5px solid #dddaf5 !important;
+        border-radius: 14px !important;
+        background: #faf9ff !important;
+        box-sizing: border-box !important;
+        cursor: pointer !important;
+    }
+
+    div[data-testid="stRadio"] div[role="radiogroup"] label:hover {
+        border-color: #6558c8 !important;
+        background: #f2f0ff !important;
+    }
+
+    div[data-testid="stRadio"] div[role="radiogroup"] label p {
+        font-size: 17px !important;
         font-weight: 700 !important;
     }
-    .section-title {
-        font-size: 22px;
-        font-weight: 800;
-        color: #222;
-        margin-bottom: 4px;
-        padding-bottom: 8px;
-        border-bottom: 2.5px solid #534ab7;
-        display: inline-block;
-    }
-    section[data-testid="stSidebar"] div[data-testid="stButton"] > button {
-        border-radius: 10px !important;
-        font-size: 13px !important;
-        padding: 8px 10px !important;
-    }
-    div[data-testid="column"] div[data-testid="stButton"] > button {
-        border-radius: 10px !important;
-        font-size: 15px !important;
-        padding: 10px 18px !important;
-        font-weight: 600 !important;
-        width: 100%;
+
+    /* ---------- 所有按鈕 ---------- */
+    div[data-testid="stButton"] > button,
+    div[data-testid="stDownloadButton"] > button {
+        min-height: 50px !important;
+        border-radius: 14px !important;
+        font-size: 16px !important;
+        font-weight: 700 !important;
+        width: 100% !important;
     }
 
-    /* -------- 手機（窄螢幕）版型調整 -------- */
+    /* ---------- 輸入框 ---------- */
+    div[data-testid="stTextInput"] input {
+        min-height: 48px !important;
+        font-size: 16px !important; /* iPhone 避免輸入時自動放大 */
+        border-radius: 12px !important;
+    }
+
+    /* ---------- 自訂區塊 ---------- */
+    .mobile-title {
+        font-size: 25px;
+        font-weight: 850;
+        color: #222;
+        margin: 0 0 2px 0;
+    }
+
+    .mobile-subtitle {
+        color: #888;
+        font-size: 14px;
+        margin: 0 0 14px 0;
+    }
+
+    .progress-card {
+        background: #f7f6ff;
+        border: 1px solid #dedaf8;
+        border-radius: 14px;
+        padding: 12px 14px;
+        margin: 8px 0 14px 0;
+    }
+
+    .progress-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+        color: #555;
+        margin-bottom: 7px;
+    }
+
+    .progress-track {
+        background: #e8e8e8;
+        border-radius: 999px;
+        height: 9px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        background: #534ab7;
+        height: 9px;
+        border-radius: 999px;
+    }
+
+    .clip-card {
+        background: #f7f6ff;
+        border: 1.5px solid #d8d4f5;
+        border-radius: 14px;
+        padding: 10px 13px;
+        color: #4b419e;
+        font-size: 14px;
+        font-weight: 750;
+        margin-bottom: 10px;
+        word-break: break-word;
+    }
+
+    .emotion-definition {
+        background: #fafafa;
+        border-radius: 12px;
+        padding: 10px 12px;
+        color: #666;
+        font-size: 14px;
+        margin-top: 8px;
+        line-height: 1.55;
+    }
+
+    .small-muted {
+        color: #888;
+        font-size: 13px;
+    }
+
+    /* ---------- Sidebar 只做輔助，不再固定寬度 ---------- */
+    section[data-testid="stSidebar"] {
+        min-width: 0 !important;
+    }
+
+    section[data-testid="stSidebar"] div[data-testid="stButton"] > button {
+        min-height: 44px !important;
+        font-size: 14px !important;
+    }
+
+    /* ---------- 手機 ---------- */
     @media (max-width: 768px) {
-        section[data-testid="stSidebar"] {
-            width: 88vw !important;
-            min-width: 260px !important;
+        .block-container {
+            padding-top: 0.65rem !important;
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+            padding-bottom: 4rem !important;
         }
-        section[data-testid="stSidebar"] > div {
-            width: 88vw !important;
-            min-width: 260px !important;
-        }
-        div[data-testid="stRadio"] > label p {
-            font-size: 18px !important;
-        }
-        .section-title {
-            font-size: 19px;
-        }
-        div[data-testid="column"] div[data-testid="stButton"] > button {
-            font-size: 14px !important;
-            padding: 10px 12px !important;
-        }
-        h1 {
+
+        .mobile-title {
             font-size: 22px !important;
+        }
+
+        .mobile-subtitle {
+            font-size: 13px !important;
+            margin-bottom: 10px !important;
+        }
+
+        div[data-testid="stVideo"] video {
+            max-height: 48vh !important;
+            border-radius: 12px !important;
+        }
+
+        div[data-testid="stRadio"] div[role="radiogroup"] label {
+            min-height: 50px !important;
+            padding: 9px 12px !important;
+            border-radius: 12px !important;
+        }
+
+        div[data-testid="stButton"] > button,
+        div[data-testid="stDownloadButton"] > button {
+            min-height: 48px !important;
+            font-size: 15px !important;
+        }
+
+        /* Streamlit columns 在窄螢幕時仍由框架自動堆疊；縮小 gap */
+        div[data-testid="stHorizontalBlock"] {
+            gap: 0.55rem !important;
         }
     }
     </style>
@@ -811,225 +937,227 @@ def build_record(annotator_name: str, clip_id: str, emotion: str):
 
 
 # =========================================================
-# 8. 頁面標題
+# 8. 手機版共用 UI
 # =========================================================
-st.markdown(
-    f'<h1 style="font-size:28px;font-weight:800;color:#222;margin-bottom:2px;">'
-    f'🐱 {APP_TITLE}</h1>'
-    f'<p style="color:#888;font-size:14px;margin-top:0;margin-bottom:20px;">'
-    f'觀看影片 → 選擇情緒 → 儲存並下一段</p>',
-    unsafe_allow_html=True,
-)
-
-videos = load_video_files()
-init_session(videos)
-
-
-# =========================================================
-# 9. Sidebar
-# =========================================================
-with st.sidebar:
+def render_app_header():
     st.markdown(
-        '<div style="font-size:17px;font-weight:800;color:#222;margin-bottom:12px;">'
-        '📊 標註進度</div>',
+        f'<div class="mobile-title">🐱 {APP_TITLE}</div>'
+        '<div class="mobile-subtitle">觀看影片 → 選擇情緒 → 儲存並下一段</div>',
         unsafe_allow_html=True,
     )
 
-    total = len(st.session_state.videos)
-    completed = st.session_state.completed
+
+def render_progress(completed: int, total: int, current_index: int | None = None):
     pct = int(completed / total * 100) if total else 0
+
+    if current_index is not None and current_index < total:
+        position_text = f"目前第 {current_index + 1} / {total} 支"
+    else:
+        position_text = f"共 {total} 支"
 
     st.markdown(
         f"""
-        <div style="background:#f5f4ff;border-radius:10px;padding:12px 14px;
-                    border:1px solid #d4d0f5;margin-bottom:12px;">
-            <div style="display:flex;justify-content:space-between;font-size:13px;
-                        color:#555;margin-bottom:6px;">
-                <span>已完成 {completed} / {total} 支影片</span>
-                <span style="font-weight:700;color:#534ab7;">{pct}%</span>
+        <div class="progress-card">
+            <div class="progress-top">
+                <span>{position_text}</span>
+                <span><b>{completed}</b> 已完成 · <b>{pct}%</b></span>
             </div>
-            <div style="background:#e0e0e0;border-radius:6px;height:8px;overflow:hidden;">
-                <div style="background:#534ab7;height:8px;width:{pct}%;border-radius:6px;"></div>
+            <div class="progress-track">
+                <div class="progress-fill" style="width:{pct}%;"></div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    annotator_name = st.text_input(
-        "👤 標註者姓名 / 編號",
+
+videos = load_video_files()
+init_session(videos)
+render_app_header()
+
+
+# =========================================================
+# 9. Sidebar：手機版只放輔助功能
+# =========================================================
+with st.sidebar:
+    st.markdown("### ⚙️ 標註設定")
+
+    sidebar_name = st.text_input(
+        "標註者姓名 / 編號",
         value=st.session_state.get("annotator_name", ""),
         placeholder="請輸入姓名或編號…",
-        help="輸入後會讀取同名 Google Sheet 紀錄，並跳到第一支尚未完成的影片。",
+        key="sidebar_annotator_input",
     )
 
-    input_name = annotator_name.strip()
-    loaded_name = st.session_state.get("loaded_annotator_name", "").strip()
-
-    if input_name:
-        st.session_state["annotator_name"] = input_name
-
-        if input_name != loaded_name:
+    if st.button("讀取此標註者進度", use_container_width=True):
+        input_name = sidebar_name.strip()
+        if not input_name:
+            st.warning("請先輸入標註者姓名 / 編號。")
+        else:
             try:
                 load_progress_and_jump(input_name)
                 st.rerun()
             except Exception as e:
-                # Google Sheet 暫時讀不到時，仍允許繼續使用介面。
+                st.session_state["annotator_name"] = input_name
                 st.session_state["loaded_annotator_name"] = input_name
                 st.session_state["completed"] = count_completed(input_name)
                 st.warning(f"讀取 Google Sheet 失敗：{e}")
-    else:
-        st.session_state["annotator_name"] = ""
-
-    if st.session_state.get("google_sheet_load_message"):
-        st.success(st.session_state["google_sheet_load_message"])
 
     if st.button("🏠 回到說明頁", use_container_width=True):
         go_to_instruction()
 
-    if (
-        st.session_state.page == "annotation"
-        and st.session_state.current_index < len(st.session_state.videos)
-    ):
-        sidebar_video = st.session_state.videos[st.session_state.current_index]
-        st.markdown("---")
-        st.markdown(
-            f'<div style="font-size:12px;color:#888;margin-bottom:4px;">'
-            f'🎬 {get_clip_id(sidebar_video)}</div>'
-            f'<div style="font-size:12px;color:#aaa;margin-bottom:6px;">'
-            f'索引：{st.session_state.current_index + 1} / {total}</div>',
-            unsafe_allow_html=True,
-        )
-        render_small_video(sidebar_video)
+    st.divider()
+    st.markdown("### 📖 情緒定義")
 
-    st.markdown("---")
-    st.markdown(
-        '<div style="font-size:13px;font-weight:700;color:#555;margin-bottom:8px;">'
-        '📖 情緒定義快速查看</div>',
-        unsafe_allow_html=True,
-    )
-
-    button_labels = {
-        "害怕": "😿 害怕",
-        "憤怒/狂怒": "😾 憤怒/狂怒",
-        "歡樂/玩耍": "😺 歡樂/玩耍",
-        "滿意": "😽 滿意",
-        "興趣": "🐾 興趣",
-    }
-
-    col1, col2 = st.columns(2)
-    for i, emotion_name in enumerate(EMOTION_SCHEMA.keys()):
-        target_col = col1 if i % 2 == 0 else col2
-        with target_col:
-            if st.button(
-                button_labels.get(emotion_name, emotion_name),
-                key=f"sidebar_emotion_{emotion_name}",
-                use_container_width=True,
-            ):
-                show_emotion_dialog(emotion_name)
+    for emotion_name in EMOTION_SCHEMA.keys():
+        if st.button(
+            f"{EMOTION_ICONS.get(emotion_name, '')} {emotion_name}",
+            key=f"sidebar_emotion_{emotion_name}",
+            use_container_width=True,
+        ):
+            show_emotion_dialog(emotion_name)
 
 
 # =========================================================
 # 10. 說明頁
 # =========================================================
 if st.session_state.page == "instruction":
-    st.subheader("標註規則")
-    st.markdown("1. 請先完整觀看整段影片，再進行情緒判斷。")
-    st.markdown("2. 每段影片只選擇 **一個最主要的情緒**。")
-    st.markdown("3. 若不屬於五種主要情緒，可選擇 **中性/其他**。")
-    st.markdown("4. 若兩種以上情緒同樣重要，或無法判定單一主要情緒，選擇 **uncertain**。")
+    st.markdown("### 開始標註")
 
-    st.subheader("情緒定義與判斷參考")
-    for emotion_name, item in EMOTION_SCHEMA.items():
-        icon = EMOTION_ICONS.get(emotion_name, "")
-        with st.expander(f"{icon} {emotion_name}", expanded=False):
-            img_path = DEFINITION_IMAGE_MAP.get(emotion_name)
-            if img_path and img_path.exists():
-                st.image(str(img_path), use_container_width=True)
-            st.write(f"**定義：** {item['definition']}")
-
-    st.info("每支影片只需要選擇一次主要情緒，然後儲存。")
-
-    start_disabled = (
-        annotator_name.strip() == ""
-        or len(st.session_state.videos) == 0
+    # 手機版把姓名輸入放在主畫面，不必先開 Sidebar。
+    main_name = st.text_input(
+        "👤 標註者姓名 / 編號",
+        value=st.session_state.get("annotator_name", ""),
+        placeholder="請輸入姓名或編號…",
+        key="main_annotator_input",
     )
 
+    st.markdown("#### 標註規則")
+    st.markdown(
+        """
+1. 請先完整觀看整段影片，再進行情緒判斷。  
+2. 每段影片只選擇 **一個最主要的情緒**。  
+3. 若不屬於五種主要情緒，選擇 **中性/其他**。  
+4. 若無法判定單一主要情緒，或多種情緒同樣重要，選擇 **uncertain**。
+        """
+    )
+
+    with st.expander("📖 查看情緒定義", expanded=False):
+        for emotion_name, item in EMOTION_SCHEMA.items():
+            st.markdown(
+                f"**{EMOTION_ICONS.get(emotion_name, '')} {emotion_name}**  \n"
+                f"{item['definition']}"
+            )
+            st.markdown("---")
+
+        st.markdown("**➖ 中性/其他**  \n不明顯屬於五種主要情緒，或偏中性、一般日常狀態。")
+        st.markdown("---")
+        st.markdown("**❓ uncertain**  \n無法判定單一主要情緒，或多種情緒同樣重要。")
+
+    total = len(st.session_state.videos)
+    completed_preview = count_completed(main_name.strip()) if main_name.strip() else 0
+    render_progress(completed_preview, total)
+
     if st.button(
-        "✅ 我已閱讀完畢，開始標註",
-        disabled=start_disabled,
+        "✅ 開始／繼續標註",
         type="primary",
+        use_container_width=True,
+        disabled=(not main_name.strip() or total == 0),
     ):
-        st.session_state.page = "annotation"
+        name = main_name.strip()
+        st.session_state["annotator_name"] = name
+
+        try:
+            load_progress_and_jump(name)
+        except Exception as e:
+            # 即使讀取 Sheet 失敗，仍可開始；本次資料會先存在 Session。
+            st.session_state["loaded_annotator_name"] = name
+            st.session_state["completed"] = count_completed(name)
+            st.session_state["current_index"] = find_first_unfinished_video_index(name)
+            st.session_state["page"] = "annotation"
+            st.warning(f"讀取 Google Sheet 失敗，但仍可開始標註：{e}")
+
         st.rerun()
 
 
 # =========================================================
-# 11. 標註頁
+# 11. 標註頁：手機優先
 # =========================================================
 else:
+    annotator_name = st.session_state.get("annotator_name", "").strip()
+
+    if not annotator_name:
+        st.warning("請先輸入標註者姓名 / 編號。")
+        if st.button("回到開始頁", use_container_width=True):
+            go_to_instruction()
+        st.stop()
+
     if len(st.session_state.videos) == 0:
         st.error("沒有可標註的影片。")
         st.stop()
 
-    # 全部完成
-    if st.session_state.current_index >= len(st.session_state.videos):
+    total = len(st.session_state.videos)
+    st.session_state.completed = count_completed(annotator_name)
+
+    # ---------- 全部完成 ----------
+    if st.session_state.current_index >= total:
+        render_progress(st.session_state.completed, total)
         st.success("🎉 這 300 支影片全部標註完成了！")
 
         df_all = get_annotations_df(annotator_name)
         if not df_all.empty:
-            st.dataframe(df_all, use_container_width=True)
-
             csv_bytes = df_all.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 "⬇️ 下載標註結果 CSV",
                 data=csv_bytes,
-                file_name=f"annotations_{annotator_name.strip()}.csv",
+                file_name=f"annotations_{annotator_name}.csv",
                 mime="text/csv",
+                use_container_width=True,
             )
+
+            with st.expander("查看標註結果", expanded=False):
+                st.dataframe(df_all, use_container_width=True, hide_index=True)
+
+        if st.button("🏠 回到說明頁", use_container_width=True):
+            go_to_instruction()
         st.stop()
 
     current_video = st.session_state.videos[st.session_state.current_index]
     current_clip_id = get_clip_id(current_video)
     current_video_file = get_video_file(current_video)
+    saved_record = get_saved_record(annotator_name, current_clip_id)
 
-    saved_record = (
-        get_saved_record(annotator_name, current_clip_id)
-        if annotator_name
-        else None
+    render_progress(
+        completed=st.session_state.completed,
+        total=total,
+        current_index=st.session_state.current_index,
     )
 
     st.markdown(
-        f'<div style="background:#f5f4ff;border:1.5px solid #d4d0f5;border-radius:10px;'
-        f'padding:10px 16px;font-size:14px;color:#534ab7;font-weight:600;margin-bottom:12px;">'
-        f'🎬 {current_clip_id} &nbsp;&nbsp; '
-        f'<span style="color:#999;font-weight:400;">{current_video_file}</span></div>',
+        f'<div class="clip-card">🎬 {current_clip_id}'
+        f'<br><span class="small-muted">標註者：{annotator_name}</span></div>',
         unsafe_allow_html=True,
     )
 
-    # -----------------------------------------------------
-    # 主畫面直接播放影片（手機不用開側邊欄也能看）
-    # -----------------------------------------------------
-    st.markdown(
-        '<div class="section-title">觀看影片</div>',
-        unsafe_allow_html=True,
-    )
-    st.video(current_video["url"])
+    # 影片放主畫面，全寬顯示；這是手機版最重要的調整。
+    render_small_video(current_video)
 
     if saved_record:
-        st.info("📝 這支影片已經標過，可以修改情緒後重新儲存。")
+        st.info("📝 這支影片已標過；重新選擇後儲存即可更新。")
 
-    st.markdown(
-        '<div class="section-title">選擇情緒</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### 選擇情緒")
 
     emotion_key = f"emotion_{st.session_state.current_index}"
     saved_emotion = get_record_emotion(saved_record)
 
     if emotion_key not in st.session_state:
         st.session_state[emotion_key] = saved_emotion
+
+    # 加圖示讓手機使用者更快辨認選項。
+    emotion_labels = {
+        emotion: f"{EMOTION_ICONS.get(emotion, '')} {emotion}"
+        for emotion in MAIN_EMOTIONS
+    }
 
     selected_emotion = st.radio(
         "請選擇這段影片最主要的情緒",
@@ -1040,87 +1168,40 @@ else:
             else None
         ),
         key=emotion_key,
+        format_func=lambda x: emotion_labels.get(x, x),
+        label_visibility="collapsed",
     )
 
     if selected_emotion in EMOTION_SCHEMA:
-        st.caption(
-            f"{EMOTION_ICONS.get(selected_emotion, '')} "
-            f"{EMOTION_SCHEMA[selected_emotion]['definition']}"
+        st.markdown(
+            f'<div class="emotion-definition">'
+            f'{EMOTION_ICONS.get(selected_emotion, "")} '
+            f'{EMOTION_SCHEMA[selected_emotion]["definition"]}'
+            f'</div>',
+            unsafe_allow_html=True,
         )
     elif selected_emotion == "中性/其他":
-        st.caption("➖ 不明顯屬於五種主要情緒，或偏中性、一般日常狀態。")
+        st.markdown(
+            '<div class="emotion-definition">➖ 不明顯屬於五種主要情緒，或偏中性、一般日常狀態。</div>',
+            unsafe_allow_html=True,
+        )
     elif selected_emotion == "uncertain":
-        st.caption("❓ 無法判定單一主要情緒，或多種情緒同樣重要。")
-
-    st.divider()
-
-    # -----------------------------------------------------
-    # CSV 預覽 / 下載
-    # -----------------------------------------------------
-    df_mine = get_annotations_df(annotator_name) if annotator_name else pd.DataFrame()
-    csv_bytes = None
-
-    if annotator_name and selected_emotion:
-        preview_record = {
-            "annotator_name": annotator_name.strip(),
-            "clip_id": current_clip_id,
-            "emotion": selected_emotion,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        }
-
-        if not df_mine.empty:
-            preview_df = pd.concat(
-                [
-                    df_mine[df_mine["clip_id"] != current_clip_id],
-                    pd.DataFrame([preview_record]),
-                ],
-                ignore_index=True,
-            )
-
-            order_map = {clip_id: i for i, clip_id in enumerate(CLIP_IDS)}
-            preview_df["__order"] = preview_df["clip_id"].map(order_map)
-            preview_df = (
-                preview_df
-                .sort_values("__order")
-                .drop(columns="__order")
-                .reset_index(drop=True)
-            )
-        else:
-            preview_df = pd.DataFrame([preview_record])
-
-        csv_bytes = preview_df.to_csv(index=False).encode("utf-8-sig")
-
-    c_download, c_save = st.columns([2, 3])
-
-    with c_download:
-        st.download_button(
-            "⬇️ 下載我的標註 CSV",
-            data=csv_bytes if csv_bytes is not None else b"",
-            file_name=(
-                f"annotations_{annotator_name.strip()}.csv"
-                if annotator_name
-                else "annotations.csv"
-            ),
-            mime="text/csv",
-            disabled=(csv_bytes is None),
-            use_container_width=True,
+        st.markdown(
+            '<div class="emotion-definition">❓ 無法判定單一主要情緒，或多種情緒同樣重要。</div>',
+            unsafe_allow_html=True,
         )
 
-    with c_save:
-        save_clicked = st.button(
-            "☁️ 儲存並下一段",
-            type="primary",
-            use_container_width=True,
-            disabled=(
-                not annotator_name.strip()
-                or selected_emotion is None
-            ),
-            key=f"save_next_{st.session_state.current_index}",
-        )
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # -----------------------------------------------------
-    # 儲存
-    # -----------------------------------------------------
+    # ---------- 主要動作：手機上維持單一、全寬的大按鈕 ----------
+    save_clicked = st.button(
+        "☁️ 儲存並下一段",
+        type="primary",
+        use_container_width=True,
+        disabled=(selected_emotion is None),
+        key=f"save_next_{st.session_state.current_index}",
+    )
+
     if save_clicked:
         record = build_record(
             annotator_name=annotator_name,
@@ -1128,7 +1209,6 @@ else:
             emotion=selected_emotion,
         )
 
-        # Session / CSV 只保留真正需要的四欄。
         local_record = {
             "annotator_name": record["annotator_name"],
             "clip_id": record["clip_id"],
@@ -1141,45 +1221,60 @@ else:
 
         try:
             append_to_google_sheet(record, annotator_name)
-            st.toast("✅ 已同步到 Google Sheet")
+            st.toast("✅ 已儲存")
         except Exception as e:
             st.warning(
                 f"本次標註已保留在目前 Session，但同步 Google Sheet 失敗：{e}"
             )
 
-        if st.session_state.current_index < len(st.session_state.videos) - 1:
+        if st.session_state.current_index < total - 1:
             st.session_state.current_index += 1
+            # 清除「下一支」可能殘留的 widget 狀態，讓它載入自己的已存值。
             clear_emotion_widget(st.session_state.current_index)
             st.rerun()
         else:
-            st.session_state.current_index = len(st.session_state.videos)
+            st.session_state.current_index = total
             st.rerun()
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.divider()
+    # ---------- 次要導覽 ----------
+    nav_prev, nav_next = st.columns(2)
 
-    # -----------------------------------------------------
-    # 上一段 / 下一段
-    # -----------------------------------------------------
-    col_prev, col_next = st.columns(2)
-
-    with col_prev:
+    with nav_prev:
         if st.button(
             "◀ 上一段",
-            disabled=st.session_state.current_index == 0,
+            disabled=(st.session_state.current_index == 0),
             use_container_width=True,
+            key=f"prev_{st.session_state.current_index}",
         ):
             st.session_state.current_index -= 1
             st.rerun()
 
-    with col_next:
+    with nav_next:
         if st.button(
             "下一段 ▶",
-            disabled=(
-                st.session_state.current_index
-                >= len(st.session_state.videos) - 1
-            ),
+            disabled=(st.session_state.current_index >= total - 1),
             use_container_width=True,
+            key=f"next_{st.session_state.current_index}",
         ):
             st.session_state.current_index += 1
             st.rerun()
+
+    # ---------- 手機上把下載與定義收進 expander，避免干擾主要任務 ----------
+    with st.expander("更多功能", expanded=False):
+        df_mine = get_annotations_df(annotator_name)
+        csv_bytes = df_mine.to_csv(index=False).encode("utf-8-sig")
+
+        st.download_button(
+            "⬇️ 下載目前標註 CSV",
+            data=csv_bytes,
+            file_name=f"annotations_{annotator_name}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+        st.markdown("**情緒定義快速查看**")
+        for emotion_name, item in EMOTION_SCHEMA.items():
+            st.markdown(
+                f"**{EMOTION_ICONS.get(emotion_name, '')} {emotion_name}：** "
+                f"{item['definition']}"
+            )
