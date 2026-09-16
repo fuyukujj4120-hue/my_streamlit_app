@@ -512,6 +512,79 @@ def load_annotations_from_google_sheet(annotator_name: str):
 
 
 # =========================================================
+# 標註全程時間紀錄（實際經過時間，包含離開與休息）
+# =========================================================
+TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def parse_time(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value).strip(), TIME_FORMAT)
+    except (ValueError, TypeError):
+        return None
+
+
+def format_duration(seconds):
+    seconds = max(0, int(seconds))
+    hours, remaining = divmod(seconds, 3600)
+    minutes, seconds = divmod(remaining, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def restore_annotation_start(annotator_name):
+    """優先使用持久化的開始時間；舊資料僅能以首筆儲存時間估算。"""
+    name = annotator_name.strip()
+    starts = st.session_state.setdefault("annotation_start_times", {})
+    if not name:
+        return None
+    if name in starts:
+        return starts[name]
+    df = get_annotations_df(name)
+    if not df.empty:
+        explicit = [parse_time(x) for x in df["start_time"]] if "start_time" in df else []
+        explicit = [x for x in explicit if x is not None]
+        if explicit:
+            start = min(explicit).strftime(TIME_FORMAT)
+            starts[name] = start
+            return start
+        # 舊版資料未記錄開始時間：不把首筆儲存時間冒充為真正開始時間。
+    return None
+
+
+def ensure_annotation_start(annotator_name):
+    start = restore_annotation_start(annotator_name)
+    if start is None:
+        start = datetime.now().strftime(TIME_FORMAT)
+        st.session_state.setdefault("annotation_start_times", {})[annotator_name.strip()] = start
+    return start
+
+
+def get_completion_summary(annotator_name):
+    df = get_annotations_df(annotator_name)
+    start = restore_annotation_start(annotator_name)
+    if df.empty or not start or count_completed(annotator_name) < len(CLIP_IDS):
+        return None
+    ends = [parse_time(x) for x in df["end_time"]] if "end_time" in df else []
+    ends = [x for x in ends if x is not None]
+    # 最後一筆儲存時間是完成時刻；若有獨立 end_time，以其為準。
+    if not ends:
+        ends = [parse_time(x) for x in df["timestamp"]]
+        ends = [x for x in ends if x is not None]
+    if not ends:
+        return None
+    end = max(ends)
+    start_dt = parse_time(start)
+    if start_dt is None:
+        return None
+    elapsed = max(0, int((end - start_dt).total_seconds()))
+    return {"annotator_name": annotator_name.strip(), "start_time": start,
+            "end_time": end.strftime(TIME_FORMAT), "elapsed_seconds": elapsed,
+            "elapsed_hms": format_duration(elapsed)}
+
+
+# =========================================================
 # 7. 影片 / 標註資料工具函式
 # =========================================================
 def load_video_files():
@@ -583,6 +656,8 @@ def normalize_record(record: dict, annotator_name: str):
         "clip_id": clip_id,
         "emotion": emotion or "",
         "timestamp": timestamp,
+        "start_time": str(record.get("start_time", "") or "").strip(),
+        "end_time": str(record.get("end_time", "") or "").strip(),
     }
 
 
@@ -603,7 +678,7 @@ def upsert_annotation(record: dict, annotator_name: str):
 
 def get_annotations_df(annotator_name: str):
     """只回傳目前 annotation_v1 這 300 支 clip 的標註。"""
-    columns = ["annotator_name", "clip_id", "emotion", "timestamp"]
+    columns = ["annotator_name", "clip_id", "emotion", "timestamp", "start_time", "end_time"]
 
     if not annotator_name:
         return pd.DataFrame(columns=columns)
@@ -688,6 +763,8 @@ def load_progress_and_jump(annotator_name: str):
     st.session_state["annotator_name"] = name
     st.session_state["loaded_annotator_name"] = name
     st.session_state["completed"] = count_completed(name)
+    # 若前次開始時間已存入 Sheet，先還原，避免重新起算。
+    restore_annotation_start(name)
     st.session_state["current_index"] = target_index
     st.session_state["page"] = "annotation"
 
@@ -718,6 +795,7 @@ def init_session(videos):
         "loaded_annotator_name": "",
         "google_sheet_load_message": "",
         "annotator_name": "",
+        "annotation_start_times": {},
     }
 
     for key, value in defaults.items():
@@ -725,7 +803,7 @@ def init_session(videos):
             st.session_state[key] = value
 
 
-def build_record(annotator_name: str, clip_id: str, emotion: str):
+def build_record(annotator_name: str, clip_id: str, emotion: str, is_last: bool = False):
     """
     Streamlit / CSV 主要資料：
     annotator_name / clip_id / emotion / timestamp
@@ -733,7 +811,8 @@ def build_record(annotator_name: str, clip_id: str, emotion: str):
     為了相容舊 Apps Script，同時送：
     video_file / step1_selected_emotion / final_emotion
     """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().strftime(TIME_FORMAT)
+    start_time = ensure_annotation_start(annotator_name)
 
     return {
         "annotator_name": annotator_name.strip(),
@@ -743,6 +822,8 @@ def build_record(annotator_name: str, clip_id: str, emotion: str):
         "step1_selected_emotion": emotion,
         "final_emotion": emotion,
         "timestamp": timestamp,
+        "start_time": start_time,
+        "end_time": timestamp if is_last else "",
     }
 
 
@@ -806,6 +887,8 @@ with st.sidebar:
         else:
             try:
                 load_progress_and_jump(input_name)
+                if count_completed(input_name) < len(CLIP_IDS):
+                    ensure_annotation_start(input_name)
                 st.rerun()
             except Exception as e:
                 st.session_state["annotator_name"] = input_name
@@ -879,12 +962,16 @@ if st.session_state.page == "instruction":
 
         try:
             load_progress_and_jump(name)
+            if count_completed(name) < len(CLIP_IDS):
+                ensure_annotation_start(name)
         except Exception as e:
             # 即使讀取 Sheet 失敗，仍可開始；本次資料會先存在 Session。
             st.session_state["loaded_annotator_name"] = name
             st.session_state["completed"] = count_completed(name)
             st.session_state["current_index"] = find_first_unfinished_video_index(name)
             st.session_state["page"] = "annotation"
+            if count_completed(name) < len(CLIP_IDS):
+                ensure_annotation_start(name)
             st.warning(f"讀取 Google Sheet 失敗，但仍可開始標註：{e}")
 
         st.rerun()
@@ -912,7 +999,21 @@ else:
     # ---------- 全部完成 ----------
     if st.session_state.current_index >= total:
         render_progress(st.session_state.completed, total)
-        st.success("🎉 這 300 支影片全部標註完成了！")
+        st.success(f"🎉 這 {total} 支影片全部標註完成了！")
+        summary = get_completion_summary(annotator_name)
+        if summary:
+            st.markdown(f"**開始時間：** {summary['start_time']}")
+            st.markdown(f"**完成時間：** {summary['end_time']}")
+            st.markdown(f"**全部標註總耗時：** {summary['elapsed_hms']}（{summary['elapsed_seconds']} 秒）")
+            st.caption("總耗時為開始至完成的實際經過時間，包含中途休息。")
+            st.download_button(
+                "⬇️ 下載全程時間紀錄 CSV",
+                data=pd.DataFrame([summary]).to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"annotation_time_{annotator_name}.csv",
+                mime="text/csv", use_container_width=True,
+            )
+        else:
+            st.info("缺少可確認的原始開始時間或完成時間，無法可靠計算全部耗時；舊版紀錄可能沒有開始時間。")
 
         df_all = get_annotations_df(annotator_name)
         if not df_all.empty:
@@ -942,6 +1043,9 @@ else:
         total=total,
         current_index=st.session_state.current_index,
     )
+    start_time = restore_annotation_start(annotator_name)
+    if start_time:
+        st.caption(f"⏱️ 本次全程開始時間：{start_time}（含中途休息）")
 
     st.markdown(
         f'<div class="clip-card">🎬 {current_clip_id}'
@@ -1017,6 +1121,7 @@ else:
             annotator_name=annotator_name,
             clip_id=current_clip_id,
             emotion=selected_emotion,
+            is_last=(st.session_state.current_index == total - 1),
         )
 
         local_record = {
@@ -1024,6 +1129,8 @@ else:
             "clip_id": record["clip_id"],
             "emotion": record["emotion"],
             "timestamp": record["timestamp"],
+            "start_time": record["start_time"],
+            "end_time": record["end_time"],
         }
 
         upsert_annotation(local_record, annotator_name)
